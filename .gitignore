@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Bob Protocol / via — machine-local config and index, not portable
+.mcp.json
+.via/
