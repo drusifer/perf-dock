@@ -81,3 +81,24 @@ When a component wraps a CLI tool's output, mocked tests alone are not sufficien
 
 ### References
 - **Files:** `perf_dock/state.py`, `tests/test_state.py`
+
+---
+
+## [2026-07-29] Second mocked-test-validates-a-wrong-command bug — cpupower flag position
+
+> **Tags:** #Neo #Testing #Bug
+
+### Context
+User reported "could not switch to <governor>" when actually clicking the tray menu after the v1 sprint shipped. `_run_privileged` built `["pkexec", cpupower_path, "-r", "frequency-set", *args]`. All mocked `test_controller.py` assertions matched this exact (wrong) list, so 43/43 tests passed.
+
+### The Issue
+Per `cpupower-frequency-set(1)`, `-r`/`--related` is an option of the `frequency-set` subcommand, not a global `cpupower` flag — it must come *after* `frequency-set`, not before. `cpupower -r frequency-set ...` fails immediately with `Unknown option: -r` (verified directly: `cpupower -r frequency-set -g performance` → error; `cpupower frequency-set -r -g performance` → gets past parsing to the root-privilege check). The mocked tests could never catch this because they only checked "was `subprocess.run` called with this exact list" — the list itself was never validated against the real CLI's grammar.
+
+### The Rule (The "Lesson")
+For any wrapped CLI, at least one test per mutating code path must invoke the **real** binary (unprivileged, without applying an actual change) to confirm the argv shape is grammatically valid — see `tests/test_controller_integration.py`. A test asserting `subprocess.run` was called with a specific argv list only proves the code does what the test author *believed* the CLI wanted; it proves nothing about whether that belief was correct. This is the same root cause as the classify_state() precision bug above, applied to command construction instead of output parsing.
+
+### The Fix
+Corrected to `["pkexec", cpupower_path, "frequency-set", "-r", *args]`. Added `tests/test_controller_integration.py`, which runs the real `cpupower` binary unprivileged and asserts parsing succeeds (no `Unknown option` error) for both the governor and range mutation paths.
+
+### References
+- **Files:** `perf_dock/controller.py`, `tests/test_controller.py`, `tests/test_controller_integration.py`

@@ -76,7 +76,7 @@ class TestPerfDockController(unittest.TestCase):
         result = self.controller.set_governor("performance")
         self.assertTrue(result)
         mock_run.assert_called_once_with(
-            ["pkexec", "/usr/bin/cpupower", "-r", "frequency-set", "-g", "performance"],
+            ["pkexec", "/usr/bin/cpupower", "frequency-set", "-r", "-g", "performance"],
             capture_output=True,
             text=True,
             check=False,
@@ -109,8 +109,8 @@ class TestPerfDockController(unittest.TestCase):
             [
                 "pkexec",
                 "/usr/bin/cpupower",
-                "-r",
                 "frequency-set",
+                "-r",
                 "-d",
                 "1000000kHz",
                 "-u",
@@ -130,7 +130,7 @@ class TestPerfDockController(unittest.TestCase):
         mock_run.return_value = MagicMock(returncode=0, stderr="")
         self.controller.set_range(1000000, None)
         mock_run.assert_called_once_with(
-            ["pkexec", "/usr/bin/cpupower", "-r", "frequency-set", "-d", "1000000kHz"],
+            ["pkexec", "/usr/bin/cpupower", "frequency-set", "-r", "-d", "1000000kHz"],
             capture_output=True,
             text=True,
             check=False,
@@ -156,8 +156,8 @@ class TestPerfDockController(unittest.TestCase):
             [
                 "pkexec",
                 "/usr/bin/cpupower",
-                "-r",
                 "frequency-set",
+                "-r",
                 "-d",
                 "710400kHz",
                 "-u",

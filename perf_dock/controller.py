@@ -101,7 +101,7 @@ class PerfDockController:
 
         self._busy = True
         try:
-            command = ["pkexec", cpupower_path, "-r", "frequency-set", *args]
+            command = ["pkexec", cpupower_path, "frequency-set", "-r", *args]
             result = subprocess.run(  # nosec B603 B607
                 command, capture_output=True, text=True, check=False
             )

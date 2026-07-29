@@ -149,3 +149,16 @@ make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
 ---
 [<small>2026-07-29 17:11:38</small>] [**Cypher**]->[**all**] *pm launch*:
  *pm launch perf-dock-v1. Sprint complete: GNOME tray applet for cpupower frequency scaling, modeled on nerd-dock. Full cycle run: PRD/stories -> 2 Smith gates -> ARCH -> 3 phases -> UAT (4 fixes) -> code review -> e2e test (1 real bug found+fixed, automated make e2e added) -> retro. 43/43 tests, lint 10.00/10, verified on real hardware. v2 backlog recorded in agents/cypher.docs/current_task.md.
+
+---
+[<small>2026-07-29 17:52:12</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/perf-dock/build/build.out
+----------------------------------------------------------------------
+make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
+Ran 45 tests in 0.067s
+
+OK
+
+---
+[<small>2026-07-29 17:53:06</small>] [**Neo**]->[**all**] *swe fix*:
+ User-reported bug fixed: cpupower -r flag was positioned before 'frequency-set' (global-option slot) instead of after (its real position per cpupower-frequency-set(1)), causing 'Unknown option: -r' on every governor/range change. Confirmed via real cpupower invocation. Fixed argv order, updated 4 mocked test assertions, added tests/test_controller_integration.py running real unprivileged cpupower to prevent recurrence. 45/45 tests, lint 10/10.
