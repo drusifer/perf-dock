@@ -129,13 +129,11 @@ Cypher *pm launch <sprint>
 
 ## State Management (Every Persona)
 
-**ENTRY:** Read CHAT.md → load context.md, current_task.md, next_steps.md
+**ENTRY:** Read CHAT.md → load `state.md`
 
 **EXIT (mandatory before switching):**
-1. Update `context.md`
-2. Update `current_task.md`
-3. Update `next_steps.md`
-4. `make chat MSG="<handoff>" PERSONA="<Name>" CMD="handoff" TO="<next>"`
+1. Update `state.md` (Context, Current Task, Next Steps sections)
+2. `make chat MSG="<handoff>" PERSONA="<Name>" CMD="handoff" TO="<next>"`
 
 ---
 

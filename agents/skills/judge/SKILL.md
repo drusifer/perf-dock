@@ -34,10 +34,11 @@ When executing `*judge <target>`, the loop evaluates the specified target (e.g.,
 Trin *qa judge <target>
 ```
 - **Required tool — `make judge-trace [DATE=YYYY-MM-DD] [FORMAT=html|md]`**: this runs `agents/tools/trace_annotate.py`, which parses the **real Claude Code JSONL session transcripts** (`~/.claude/projects/<slug>/*.jsonl`) for the given date and programmatically flags anti-patterns (`AP-SKILL-RELOAD`, `AP-MAKE-BYPASS`, `AP-RAW-VENV`, `AP-MAKE-PIPE`, `AP-VIA-GREP`, `AP-VIA-READ`, `AP-DUP-READ`) via `agents/tools/trace_rules.json`. This is ground truth — actual tool-call events, not a prose summary. Output defaults to `agents/trin.docs/judge_tool_trace.{html,md}`.
-- **Do not hand-reconstruct a trace from `agents/CHAT.md` instead.** CHAT.md only contains what personas chose to summarize about their own work — it cannot show tool-call-level behavior (redundant invocations, piping, raw venv calls, via-bypasses) and produces a systematically over-optimistic trace. `make judge-trace` is the only source of truth for tool/skill-use judging; CHAT.md and persona `context.md` files remain the source of truth for *process/protocol* adherence (chain sequencing, gate compliance, handoffs) — the two are complementary, not interchangeable.
+- **Do not hand-reconstruct a trace from `agents/CHAT.md` instead.** CHAT.md only contains what personas chose to summarize about their own work — it cannot show tool-call-level behavior (redundant invocations, piping, raw venv calls, via-bypasses) and produces a systematically over-optimistic trace. `make judge-trace` is the only source of truth for tool/skill-use judging; CHAT.md and persona `state.md` files remain the source of truth for *process/protocol* adherence (chain sequencing, gate compliance, handoffs) — the two are complementary, not interchangeable.
 - **Manual review is still required after running the tool**: read the raw flags before scoring — the rule regexes are heuristics and can both over-flag (e.g. a `make <target> | tail` where `<target>` isn't actually mkf-captured) and under-flag. Note any flag you're overriding and why in the trace report, per-flag, not as a blanket dismissal.
 - Trin writes the analysis (raw counts + manual-review verdict per flag type + any additional scenario coverage the tool can't see) to `agents/trin.docs/judge_<target>_trace.md`.
 - **Trin's constraints**: Ensure that the target is exercised in realistic conditions representing typical developer/agent workflow.
+- **Live vs. completed sessions**: `make judge-trace` scores the JSONL transcript as it exists *right now*. If the `*judge` loop is run inside the same live session it's evaluating, every subsequent step of the loop (reading the trace, editing files, re-running the tool) appends more tool calls to that same transcript — the call/flag counts will keep growing across iterations, and a fresh Smith TES score at each iteration is not comparing like-for-like. Prefer running `*judge` on a session that has already ended. If run mid-session anyway, treat iteration 1's score as the baseline for defect-finding only, verify specific fixes by checking whether the specific previously-flagged entries are now absent (not by chasing a fresh 90+ on an ever-growing trace), and defer a real numeric re-score to the next `*judge` invocation on a completed session.
 
 ### Handoff:
 ```bash
@@ -126,6 +127,7 @@ Trin *qa verify judge <target>
 ```
 - Trin re-executes the target scenarios/actions using the updated skills and prompts.
 - Generates a new session trace report.
+- **If verifying inside the same live session** (see the live-vs-completed note in Step 1): confirm the specific previously-cataloged bug entries are gone from the new trace and that no real detections were lost — do not require a fresh TES >= 90 on the now-larger trace before closing the loop.
 - **Handoff to Smith for Re-scoring (Looping)**: Hand off to Smith to re-evaluate the new session trace. The loop continues (**Trin -> Smith -> [Neo ->] Bob -> Trin**) until Smith issues a `TES >= 90` verdict (or after 5 consecutive iterations without score improvement).
 
 ### Handoff (Trigger Next Scoring Iteration):

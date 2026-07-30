@@ -71,22 +71,18 @@ When handing off to another persona:
    python agents/tools/chat.py "@Trin please verify the fix in auth.py" \
      --persona Neo --cmd "handoff" --to Trin
    ```
-3. **Save your state files** before switching:
-   - `agents/[persona].docs/context.md`
-   - `agents/[persona].docs/current_task.md`
-   - `agents/[persona].docs/next_steps.md`
-4. **Activate the next persona** — load their `SKILL.md` and state files
+3. **Save your state file** before switching:
+   - `agents/[persona].docs/state.md`
+4. **Activate the next persona** — load their `SKILL.md` and state file
 
 ---
 
 ## Persona State Files
 
-Each persona maintains state in `agents/[persona].docs/`:
+Each persona maintains one state file in `agents/[persona].docs/`:
 
 | File | Purpose |
 |------|---------|
-| `context.md` | Accumulated knowledge, key decisions |
-| `current_task.md` | Active work, progress % |
-| `next_steps.md` | Resume plan for next activation |
+| `state.md` | Accumulated knowledge/key decisions, active work/progress %, resume plan for next activation (context, current task, next steps sections) |
 
-**State files are working memory — always load on entry, always save on exit.**
+**`state.md` is working memory — always load on entry, always save on exit.**

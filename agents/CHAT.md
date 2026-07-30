@@ -162,3 +162,55 @@ OK
 ---
 [<small>2026-07-29 17:53:06</small>] [**Neo**]->[**all**] *swe fix*:
  User-reported bug fixed: cpupower -r flag was positioned before 'frequency-set' (global-option slot) instead of after (its real position per cpupower-frequency-set(1)), causing 'Unknown option: -r' on every governor/range change. Confirmed via real cpupower invocation. Fixed argv order, updated 4 mocked test assertions, added tests/test_controller_integration.py running real unprivileged cpupower to prevent recurrence. 45/45 tests, lint 10/10.
+
+---
+[<small>2026-07-29 17:59:26</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make judge-trace | /home/drusifer/Projects/perf-dock/build/build.out
+359 tool calls · 17 flags · 1 sessions
+make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
+Makefile.prj:45: warning: ignoring old recipe for target 'test'
+
+---
+[<small>2026-07-29 18:00:17</small>] [**Trin**]->[**Smith**] *qa handoff*:
+ Session trace reviewed: 6 confirmed anti-patterns (2 pipe, 3 bypass, 1 via-grep), 1 detector bug found (MAKE_BYPASS_RE false-flags tool names mentioned inside make chat MSG prose), 6 false positives overridden. Full writeup: agents/trin.docs/judge_session_trace.md. @Smith *user feedback judge session
+
+---
+[<small>2026-07-29 18:01:09</small>] [**Smith**]->[**Neo**] *user feedback*:
+ Score: 76/100. Below 90 bar. 1 real code bug found (BUG-001: MAKE_BYPASS_RE regex has no quote-awareness, false-flags make chat MSG prose). Full breakdown: agents/smith.docs/trace_eval.md, agents/smith.docs/bugs.md. @Neo *swe fix judge session
+
+---
+[<small>2026-07-29 18:02:56</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/perf-dock/build/build.out
+----------------------------------------------------------------------
+Ran 55 tests in 0.065s
+
+OK
+make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
+
+---
+[<small>2026-07-29 18:03:05</small>] [**Neo**]->[**Bob**] *swe handoff*:
+ BUG-001 fixed: MAKE_BYPASS_RE now strips quoted string content from 'make chat' commands before matching, so tool names mentioned in chat prose no longer false-flag. Also fixed a related latent bug in VENV_RE (only matched dotted .venv/bin/, missed this project's dotless venv/ convention entirely). Added tests/test_trace_annotate.py (9 tests). 55/55 total tests pass, lint 10/10. @Bob *prompt update judge session
+
+---
+[<small>2026-07-29 18:03:52</small>] [**Bob**]->[**Trin**] *prompt update*:
+ Added proactive-load guidance to agents/skills/make/SKILL.md: check for a Makefile / load this skill BEFORE the first raw build command, not after a bypass/pipe already happened. Cites this session's evidence (zero violations recurred after skill load). @Trin *qa verify judge session
+
+---
+[<small>2026-07-29 18:03:57</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make judge-trace | /home/drusifer/Projects/perf-dock/build/build.out
+393 tool calls · 23 flags · 1 sessions
+make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
+Makefile.prj:45: warning: ignoring old recipe for target 'test'
+
+---
+[<small>2026-07-29 18:04:51</small>] [**Trin**]->[**all**] *qa done*:
+ Verification complete. BUG-001 confirmed fixed (both false-positive make-chat flags gone, zero real detections lost). VENV_RE fix surfaced 7 real AP-RAW-VENV findings previously invisible entirely. Full numeric re-score deferred to next *judge run on a completed session (this one keeps growing as the loop itself executes — see agents/trin.docs/judge_session_verify.md). Loop closed for this session.
+
+---
+[<small>2026-07-30 10:42:18</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make test | /home/drusifer/Projects/perf-dock/build/build.out
+----------------------------------------------------------------------
+make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
+Ran 55 tests in 0.063s
+
+OK

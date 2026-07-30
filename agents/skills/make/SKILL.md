@@ -8,6 +8,10 @@ One-line summary: Run `make <target>` — never call mkf.py directly, never pipe
 
 # Make Skill
 
+## Load this BEFORE your first raw build command
+
+If a `Makefile` exists in the repo root, check `make help` (or load this skill) **before** running any raw `pytest`/`ruff`/`pylint`/`pip install`/`.venv`-or-`venv`-prefixed command via Bash — not after one fails or after you've already piped output once. Every real violation of the rules below in past sessions happened in the gap before this skill was loaded; none recurred afterward. Don't wait to discover a target exists.
+
 ## The only correct invocation patterns
 
 ```bash

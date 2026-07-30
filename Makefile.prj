@@ -4,7 +4,7 @@ VENV = venv
 PYTHON = $(VENV)/bin/python3
 PIP = $(VENV)/bin/pip
 
-.PHONY: all setup run test e2e lint format clean help install-system-deps install
+.PHONY: all setup run test e2e judge-trace lint format clean help install-system-deps install
 
 all: help
 
@@ -48,6 +48,11 @@ test: ## Run unit tests with pytest
 e2e: ## Boot the real app briefly and verify clean startup/shutdown (skips if no display)
 	@echo "Running end-to-end smoke test..."
 	PYTHONPATH=. PYTHON_BIN=$(PYTHON) bash scripts/e2e_smoke.sh
+
+judge-trace: ## Extract annotated tool-use trace from Claude session JSONL (DATE=YYYY-MM-DD, FORMAT=html|md; default: today, md)
+	$(PYTHON) agents/tools/trace_annotate.py \
+		--date $(if $(DATE),$(DATE),$(shell date +%Y-%m-%d)) \
+		--format $(if $(FORMAT),$(FORMAT),md)
 
 lint: ## Run comprehensive static analysis (ruff, radon, vulture, bandit, pylint)
 	@echo "=== Running Ruff Linter ==="

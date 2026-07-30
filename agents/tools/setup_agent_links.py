@@ -15,7 +15,9 @@ TLDR:
     install_via_mcp() writes generic via MCP config; install_codex_via_mcp()
     registers the same server with Codex using `codex mcp add`;
     check_yaml_frontmatter() warns about missing
-    SKILL.md frontmatter; create_symlink() safely creates/replaces a symlink.
+    SKILL.md frontmatter; create_symlink() safely creates/replaces a symlink;
+    ensure_gitignore_entries() idempotently adds .mcp.json and .via/ to
+    .gitignore (both are machine-local and must never be committed).
     Role in the system: a one-time setup script run from the project root; depends
     on agents/*.docs/SKILL.md files existing and produces the discovery artifacts
     consumed by Claude Code, OpenAI Codex, Cursor, Gemini CLI, and GitHub Copilot.
@@ -424,6 +426,39 @@ Update this file when project capabilities change.
     return True
 
 
+GITIGNORE_ENTRIES = {
+    ".mcp.json": "Bob Protocol / via — machine-local MCP config (absolute paths), not portable",
+    ".via/": "Bob Protocol / via — local index database, not portable",
+}
+
+
+def ensure_gitignore_entries(project_root: Path) -> bool:
+    """Ensures .mcp.json and .via/ are gitignored — both are machine-local
+    (an absolute-path MCP config and a local index db) and should never be
+    committed. Idempotent: safe to run on a project that already has them.
+    """
+    gitignore_path = project_root / ".gitignore"
+    existing = gitignore_path.read_text() if gitignore_path.exists() else ""
+    existing_lines = set(existing.splitlines())
+
+    missing = [entry for entry in GITIGNORE_ENTRIES if entry not in existing_lines]
+    if not missing:
+        return False
+
+    lines = ["", "# Bob Protocol / via — machine-local config and index, not portable"]
+    for entry in missing:
+        lines.append(entry)
+    addition = "\n".join(lines) + "\n"
+
+    with open(gitignore_path, "a") as f:
+        if existing and not existing.endswith("\n"):
+            f.write("\n")
+        f.write(addition)
+
+    print(f"  ✅ Added {', '.join(missing)} to .gitignore")
+    return True
+
+
 def check_yaml_frontmatter(personas: list) -> list[str]:
     """Check which persona files are missing YAML frontmatter."""
     missing = []
@@ -488,6 +523,9 @@ def main():
     via_ok = install_via_mcp(project_root)
     codex_via_ok = install_codex_via_mcp(project_root)
     project_md_ok = setup_project_capabilities(project_root, via_index_ok and (via_ok or codex_via_ok))
+
+    print("\n📄 Checking .gitignore for machine-local files...")
+    ensure_gitignore_entries(project_root)
 
     print(f"\n✅ Done! Created {total} symlinks.")
     print("\nAgent discovery is now enabled for:")

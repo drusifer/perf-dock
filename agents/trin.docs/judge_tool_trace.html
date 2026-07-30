@@ -1,0 +1,5361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tool-Use Trace — perf-dock 2026-07-29</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --surface2: #263244;
+    --border: #334155; --text: #e2e8f0; --muted: #94a3b8;
+    --clean-row: #1e293b; --flagged-row: #2d1f0e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.5 'JetBrains Mono', 'Fira Code', monospace; }
+  a { color: #60a5fa; }
+
+  /* Header */
+  .header { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .header h1 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .header .meta { color: var(--muted); font-size: 12px; }
+  .stats { display: flex; gap: 24px; margin-top: 12px; flex-wrap: wrap; }
+  .stat { display: flex; flex-direction: column; }
+  .stat .val { font-size: 22px; font-weight: 700; }
+  .stat .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+
+  /* Filters */
+  .filters { padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--surface2);
+             display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .filters span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-right: 4px; }
+  .filter-btn { border: none; border-radius: 4px; padding: 3px 10px; font: inherit;
+                font-size: 11px; cursor: pointer; transition: opacity .15s; }
+  .filter-btn.active { opacity: 1; }
+  .filter-btn.inactive { opacity: 0.35; }
+  .filter-btn.all-btn { background: #334155; color: #e2e8f0; }
+
+  /* Sessions */
+  .sessions { padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+  details { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  details[open] summary { border-bottom: 1px solid var(--border); }
+  summary { padding: 10px 16px; cursor: pointer; background: var(--surface2); list-style: none;
+            display: flex; align-items: center; gap: 12px; user-select: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary .chevron { color: var(--muted); transition: transform .2s; font-size: 10px; }
+  details[open] summary .chevron { transform: rotate(90deg); }
+  summary .sid { font-weight: 700; }
+  summary .smeta { color: var(--muted); font-size: 11px; }
+  summary .sflag { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+
+  /* Tool call table */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  tr.clean { background: var(--clean-row); }
+  tr.flagged { background: var(--flagged-row); }
+  tr:hover td { filter: brightness(1.12); }
+  td { padding: 4px 8px; border-bottom: 1px solid #1a2535; vertical-align: top; }
+  td.seq { color: var(--muted); width: 44px; text-align: right; white-space: nowrap; padding-right: 12px; }
+  td.tool { width: 160px; white-space: nowrap; }
+  td.summary { word-break: break-all; }
+  td.badges { width: 220px; }
+
+  /* Tool name chip */
+  .tool-chip { display: inline-block; padding: 1px 7px; border-radius: 3px; font-weight: 600;
+               font-size: 11px; color: #fff; }
+
+  /* AP badge */
+  .badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px;
+           font-weight: 700; color: #fff; cursor: help; position: relative; margin: 1px 2px 1px 0;
+           white-space: nowrap; }
+  .badge .tooltip { display: none; position: absolute; z-index: 100; bottom: calc(100% + 6px); left: 0;
+                    background: #0f172a; border: 1px solid #475569; border-radius: 6px;
+                    padding: 10px 12px; width: 320px; font-size: 11px; line-height: 1.5;
+                    font-weight: 400; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  .badge:hover .tooltip { display: block; }
+  .tooltip .t-code { font-weight: 700; margin-bottom: 4px; }
+  .tooltip .t-desc { color: #94a3b8; margin-bottom: 6px; }
+  .tooltip .t-fix-lbl { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+  .tooltip .t-fix { color: #e2e8f0; margin-top: 2px; }
+
+  /* Summary table */
+  .summary-section { padding: 0 24px 24px; }
+  .summary-section h2 { font-size: 14px; margin-bottom: 12px; color: var(--muted);
+                         text-transform: uppercase; letter-spacing: .06em; }
+  .sum-table { border-collapse: collapse; width: 100%; max-width: 700px; }
+  .sum-table th { text-align: left; padding: 6px 12px; font-size: 11px; color: var(--muted);
+                   text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); }
+  .sum-table td { padding: 6px 12px; border-bottom: 1px solid #1e293b; font-size: 12px; }
+  .sum-table .count { font-weight: 700; font-size: 14px; }
+
+  /* Hidden rows for filtering */
+  tr.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Tool-Use Trace — perf-dock</h1>
+  <div class="meta">2026-07-29 &nbsp;·&nbsp; 1 sessions &nbsp;·&nbsp;
+    Rules: agents/tools/trace_rules.json</div>
+  <div class="stats">
+    <div class="stat"><span class="val">399</span><span class="lbl">Tool Calls</span></div>
+    <div class="stat"><span class="val">23</span><span class="lbl">Flags</span></div>
+    <div class="stat"><span class="val">5.8%</span><span class="lbl">Flag Rate</span></div>
+    <div class="stat"><span class="val">1</span><span class="lbl">Sessions</span></div>
+  </div>
+</div>
+
+<div class="filters">
+  <span>Filter:</span>
+  <button class="filter-btn all-btn active" onclick="filterAll(this)">Show All</button>
+  
+  <button class="filter-btn active" data-ap="AP-SKILL-RELOAD"
+          style="background:#6366f1; color:#fff;"
+          onclick="filterAP(this, 'AP-SKILL-RELOAD')">AP-SKILL-RELOAD</button>
+  
+  <button class="filter-btn active" data-ap="AP-MAKE-BYPASS"
+          style="background:#ef4444; color:#fff;"
+          onclick="filterAP(this, 'AP-MAKE-BYPASS')">AP-MAKE-BYPASS</button>
+  
+  <button class="filter-btn active" data-ap="AP-RAW-VENV"
+          style="background:#dc2626; color:#fff;"
+          onclick="filterAP(this, 'AP-RAW-VENV')">AP-RAW-VENV</button>
+  
+  <button class="filter-btn active" data-ap="AP-MAKE-PIPE"
+          style="background:#f97316; color:#fff;"
+          onclick="filterAP(this, 'AP-MAKE-PIPE')">AP-MAKE-PIPE</button>
+  
+  <button class="filter-btn active" data-ap="AP-VIA-GREP"
+          style="background:#8b5cf6; color:#fff;"
+          onclick="filterAP(this, 'AP-VIA-GREP')">AP-VIA-GREP</button>
+  
+  <button class="filter-btn active" data-ap="AP-VIA-READ"
+          style="background:#a855f7; color:#fff;"
+          onclick="filterAP(this, 'AP-VIA-READ')">AP-VIA-READ</button>
+  
+  <button class="filter-btn active" data-ap="AP-DUP-READ"
+          style="background:#eab308; color:#fff;"
+          onclick="filterAP(this, 'AP-DUP-READ')">AP-DUP-READ</button>
+  
+</div>
+
+<div class="sessions">
+
+<details open>
+  <summary>
+    <span class="chevron">▶</span>
+    <span class="sid">d7dbab9d</span>
+    <span class="smeta">??:?? &nbsp;·&nbsp; 399 calls &nbsp;·&nbsp; 23 flags</span>
+    <span class="sflag">
+      
+      <span class="badge" style="background:#8b5cf6">
+        AP-VIA-GREP ×8
+      </span>
+      
+      <span class="badge" style="background:#dc2626">
+        AP-RAW-VENV ×7
+      </span>
+      
+      <span class="badge" style="background:#ef4444">
+        AP-MAKE-BYPASS ×4
+      </span>
+      
+      <span class="badge" style="background:#a855f7">
+        AP-VIA-READ ×2
+      </span>
+      
+      <span class="badge" style="background:#f97316">
+        AP-MAKE-PIPE ×2
+      </span>
+      
+    </span>
+  </summary>
+  <table>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">1</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls -la agents/ 2&gt;/dev/null &amp;&amp; echo &#34;---CHAT---&#34; &amp;&amp; tail -50 agents/CHAT.md 2&gt;/dev/null &amp;&amp; echo &#34;---CYPHER DOCS---&#34; &amp;&amp; ls -la agents/Cypher.docs/ 2&gt;/dev/null</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">2</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">echo &#34;---cypher.docs---&#34; &amp;&amp; ls -la agents/cypher.docs/ &amp;&amp; echo &#34;---SKILL---&#34; &amp;&amp; cat agents/cypher.docs/SKILL.md 2&gt;/dev/null | head -100</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">3</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/cypher.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">4</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/cypher.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">5</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/cypher.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">6</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/CHAT.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">7</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/PROJECT.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">8</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;^chat:&#34; -A 10 Makefile 2&gt;/dev/null | head -30; echo &#34;---&#34;; ls agents/tools/</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">9</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">python agents/tools/setup_agent_links.py 2&gt;&amp;1 | tail -20</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">10</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Cold start init. CHAT.md empty, no prior task/context found. Ready for direction.&#34; PERSONA=&#34;Cypher&#34; CMD=&#34;pm init&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">11</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;User: New project perf-dock — desktop interface for &#39;cpupower frequency-set&#39;. Use ../nerd-dock as template since it&#39;s also a dock-launched tool.&#34; PERSONA=&#34;User&#34; CMD=&#34;request&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">12</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls -la ../nerd-dock 2&gt;&amp;1 | head -30</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">13</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat agents/mouse.docs/current_task.md 2&gt;/dev/null; echo &#34;---oracle lessons---&#34;; cat agents/oracle.docs/lessons.md 2&gt;/dev/null; echo &#34;---oracle memory---&#34;; cat agents/oracle.docs/memory.md 2&gt;/dev/null</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">14</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/README.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">15</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">16</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">find ../nerd-dock/nerd_dock -type f | sort; echo &#34;---docs---&#34;; ls ../nerd-dock/docs; echo &#34;---pyproject---&#34;; cat ../nerd-dock/pyproject.toml</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">17</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/docs/PRD.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">18</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/docs/USER_STORIES.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">19</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cpupower frequency-set --help 2&gt;&amp;1; echo &#34;---frequency-info---&#34;; cpupower frequency-info --help 2&gt;&amp;1; echo &#34;---current---&#34;; cpupower frequency-info 2&gt;&amp;1 | head -40</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">20</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls -la docs/ 2&gt;/dev/null; echo &#34;---&#34;; ls -la ../nerd-dock/nerd_dock/resources/icons/ 2&gt;/dev/null; cat ../nerd-dock/nerd_dock/controller.py 2&gt;/dev/null | head -60</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">21</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/docs/PRD.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">22</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/docs/USER_STORIES.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">23</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/cypher.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">24</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/cypher.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">25</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/cypher.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">26</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Drafted docs/PRD.md + docs/USER_STORIES.md (US-1..5) for perf-dock, modeled on ../nerd-dock. Flagged 2 risks for Morpheus: privilege escalation approach, power-profiles-daemon confli...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">27</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#94a3b8">ToolSearch</span>
+      </td>
+      <td class="summary">{&#39;query&#39;: &#39;select:TaskCreate,TaskUpdate&#39;, &#39;max_results&#39;: 5}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">28</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskCreate</span>
+      </td>
+      <td class="summary">{&#39;subject&#39;: &#39;Smith Gate 1: review USER_STORIES.md&#39;, &#39;description&#39;: &#39;HCI review of docs/USER_STORIES.md for perf-dock; ap</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">29</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskCreate</span>
+      </td>
+      <td class="summary">{&#39;subject&#39;: &#39;Morpheus: architecture (ARCH.md)&#39;, &#39;description&#39;: &#39;Decide privilege escalation approach (pkexec/.policy), p</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">30</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskCreate</span>
+      </td>
+      <td class="summary">{&#39;subject&#39;: &#39;Smith Gate 2: review architecture&#39;, &#39;description&#39;: &#39;Review ARCH.md for UX impact (privilege prompts, error </td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">31</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskCreate</span>
+      </td>
+      <td class="summary">{&#39;subject&#39;: &#39;Mouse: phase breakdown&#39;, &#39;description&#39;: &#39;Break sprint into small phases (1-3 tasks each) in agents/mouse.do</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">32</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskCreate</span>
+      </td>
+      <td class="summary">{&#39;subject&#39;: &#39;Phase 1: scaffolding (Neo/Trin/Morpheus)&#39;, &#39;description&#39;: &#39;pyproject.toml, Makefile.prj, package skeleton p</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">33</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskCreate</span>
+      </td>
+      <td class="summary">{&#39;subject&#39;: &#39;Phase 2: controller + monitor (Neo/Trin/Morpheus)&#39;, &#39;description&#39;: &#39;PerfDockController wrapping cpupower fr</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">34</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskCreate</span>
+      </td>
+      <td class="summary">{&#39;subject&#39;: &#39;Phase 3: tray UI (Neo/Trin/Morpheus)&#39;, &#39;description&#39;: &#39;Ayatana AppIndicator tray, governor quick-switch men</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">35</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskCreate</span>
+      </td>
+      <td class="summary">{&#39;subject&#39;: &#39;Sprint close: groom, test, retro, launch&#39;, &#39;description&#39;: &#39;Oracle groom docs, Smith end-to-end test, all-pe</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">36</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;1&#39;, &#39;status&#39;: &#39;in_progress&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">37</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/SKILL.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">38</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/docs/USER_STORIES.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">39</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/docs/USER_STORIES.md | &#39;  - The currently active governor is visibly checked/highlighted in the menu.\n\n-&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">40</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/docs/USER_STORIES.md | &#34;  - The dialog lets the user pick min and max frequency from the hardware&#39;s avai&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">41</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*user approve. Stories reviewed against Nielsen heuristics. Added 2 amendments to US-1 (Restore Default Range escape hatch; missing-cpupower error UX) and 1 to US-2 (allow min-only/m...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">42</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">43</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">44</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">45</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">46</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">47</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">48</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">49</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">50</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">51</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">52</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;1&#39;, &#39;status&#39;: &#39;completed&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">53</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;2&#39;, &#39;status&#39;: &#39;in_progress&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">54</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/SKILL.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">55</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/docs/ARCH.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">56</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">echo &#34;=== -p (policy) ===&#34;; cpupower frequency-info -p 2&gt;&amp;1
+echo &#34;=== -l (hwlimits) ===&#34;; cpupower frequency-info -l 2&gt;&amp;1
+echo &#34;=== -g (governors) ===&#34;; cpupower frequency-info -g 2&gt;&amp;1
+echo &#34;=== -f...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">57</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/docs/ARCH.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">58</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">59</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">60</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">61</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">62</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">63</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">64</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;ARCH.md complete. Resolved both risks: pkexec+default polkit policy (no custom .policy for v1), power-profiles-daemon detect-only via systemctl. Package: perf_dock/{cpufreq,state,con...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">65</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;2&#39;, &#39;status&#39;: &#39;completed&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">66</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;3&#39;, &#39;status&#39;: &#39;in_progress&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">67</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/docs/ARCH.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">68</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*user approve. ARCH.md reviewed for UX impact: pkexec-per-click is the right security tradeoff (matches US-4, no standing root). One backlog note for Cypher: menu items that trigger ...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">69</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">70</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/current_task.md | &#39;**Status:** Gate 1 complete; awaiting Morpheus architecture for Gate 2\n**Assigne&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">71</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;3&#39;, &#39;status&#39;: &#39;completed&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">72</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;4&#39;, &#39;status&#39;: &#39;in_progress&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">73</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/mouse.docs/sprint_log.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">74</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/mouse.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">75</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/mouse.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">76</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/mouse.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">77</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/mouse.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">78</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/mouse.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">79</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/mouse.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">80</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Sprint planned: 4 phases, 12 tasks in agents/mouse.docs/sprint_log.md. @Morpheus *lead review sprint plan&#34; PERSONA=&#34;Mouse&#34; CMD=&#34;sm handoff&#34; TO=&#34;Morpheus&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">81</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Sprint plan approved — phases align 1:1 with ARCH.md component design. Phase 1 ready. @Neo *swe impl phase-1&#34; PERSONA=&#34;Morpheus&#34; CMD=&#34;lead handoff&#34; TO=&#34;Neo&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">82</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;4&#39;, &#39;status&#39;: &#39;completed&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">83</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;5&#39;, &#39;status&#39;: &#39;in_progress&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">84</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls -la ../nerd-dock/Makefile.prj 2&gt;/dev/null; echo &#34;---&#34;; cat ../nerd-dock/Makefile.prj</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">85</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/nerd_dock/resources/icons/nerd-dock-recording.svg</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">86</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/nerd_dock/resources/icons/nerd-dock-stopped.svg</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">87</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/nerd_dock/resources/icons/nerd-dock-paused.svg</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-READ"
+        data-flags="AP-VIA-READ">
+      <td class="seq">88</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/nerd_dock/__init__.py</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#a855f7">
+          AP-VIA-READ
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-READ</div>
+            <div class="t-desc">Read used on a source file that is never subsequently edited in this session — likely symbol hunting rather than pre-edit inspection.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query to locate symbols and trace relationships. Read is only needed when you intend to edit the file or need its full content for review.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">89</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls -la /home/drusifer/Projects/perf-dock/ 2&gt;&amp;1 | head -40</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">90</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/pyproject.toml</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">91</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile.prj</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">92</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/__init__.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">93</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/resources/icons/perf-dock-performance.svg</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">94</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/resources/icons/perf-dock-powersave.svg</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">95</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/resources/icons/perf-dock-balanced.svg</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">96</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/resources/icons/perf-dock-custom.svg</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">97</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/resources/icons/perf-dock-error.svg</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">98</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/__init__.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">99</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">find ../nerd-dock/tests -type f | sort; echo &#34;---&#34;; cat ../nerd-dock/tests/test_controller.py 2&gt;/dev/null | head -60</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">100</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat ../nerd-dock/tests/test_ui.py 2&gt;/dev/null | head -80; echo &#34;---ui_indicator.py head---&#34;; cat ../nerd-dock/nerd_dock/ui_indicator.py | head -60; echo &#34;---main.py---&#34;; cat ../nerd-dock/nerd_dock/...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-READ"
+        data-flags="AP-VIA-READ">
+      <td class="seq">101</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/nerd_dock/ui_indicator.py</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#a855f7">
+          AP-VIA-READ
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-READ</div>
+            <div class="t-desc">Read used on a source file that is never subsequently edited in this session — likely symbol hunting rather than pre-edit inspection.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query to locate symbols and trace relationships. Read is only needed when you intend to edit the file or need its full content for review.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">102</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat ../nerd-dock/nerd_dock/monitor.py; echo &#34;---test_monitor---&#34;; cat ../nerd-dock/tests/test_monitor.py | head -50</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">103</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/state.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">104</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/cpufreq.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">105</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ppd_check.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">106</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">107</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/monitor.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">108</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">109</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/main.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">110</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_state.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">111</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_cpufreq.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">112</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">113</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_monitor.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-MAKE-BYPASS"
+        data-flags="AP-MAKE-BYPASS">
+      <td class="seq">114</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">python3 -m pytest tests/ -v 2&gt;&amp;1 | tail -100</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#ef4444">
+          AP-MAKE-BYPASS
+          <span class="tooltip">
+            <div class="t-code">AP-MAKE-BYPASS</div>
+            <div class="t-desc">Bash runs pytest/ruff/pylint/mypy directly — bypasses make targets.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Always use make <target>. Never call test runners or linters directly. Output is captured to build/build.out by the Makefile.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">115</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">PYTHONPATH=. python3 -c &#34;
+import gi
+gi.require_version(&#39;Gtk&#39;, &#39;3.0&#39;)
+gi.require_version(&#39;AyatanaAppIndicator3&#39;, &#39;0.1&#39;)
+print(&#39;gi bindings OK&#39;)
+&#34; 2&gt;&amp;1</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">116</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">PYTHONPATH=. python3 -c &#34;
+from perf_dock import ui_indicator
+print(&#39;ui_indicator imports OK&#39;)
+print(&#39;HAS_NOTIFY:&#39;, ui_indicator.HAS_NOTIFY)
+&#34; 2&gt;&amp;1</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-MAKE-BYPASS"
+        data-flags="AP-MAKE-BYPASS">
+      <td class="seq">117</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">python3 -m pip show ruff radon vulture bandit pylint 2&gt;&amp;1 | grep -E &#34;^(Name|WARNING)&#34; ; echo &#34;---&#34;; which ruff radon vulture bandit pylint 2&gt;&amp;1</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#ef4444">
+          AP-MAKE-BYPASS
+          <span class="tooltip">
+            <div class="t-code">AP-MAKE-BYPASS</div>
+            <div class="t-desc">Bash runs pytest/ruff/pylint/mypy directly — bypasses make targets.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Always use make <target>. Never call test runners or linters directly. Output is captured to build/build.out by the Makefile.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-MAKE-BYPASS"
+        data-flags="AP-MAKE-BYPASS">
+      <td class="seq">118</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">python3 -m pip install --user --quiet ruff radon vulture bandit pylint 2&gt;&amp;1 | tail -30</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#ef4444">
+          AP-MAKE-BYPASS
+          <span class="tooltip">
+            <div class="t-code">AP-MAKE-BYPASS</div>
+            <div class="t-desc">Bash runs pytest/ruff/pylint/mypy directly — bypasses make targets.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Always use make <target>. Never call test runners or linters directly. Output is captured to build/build.out by the Makefile.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">119</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;Makefile.prj\|include&#34; ../nerd-dock/Makefile 2&gt;/dev/null | head -20</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">120</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;Makefile.prj\|^-include\|^include&#34; /home/drusifer/Projects/perf-dock/Makefile | head -20</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-MAKE-PIPE"
+        data-flags="AP-MAKE-PIPE">
+      <td class="seq">121</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make setup 2&gt;&amp;1 | tail -60</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#f97316">
+          AP-MAKE-PIPE
+          <span class="tooltip">
+            <div class="t-code">AP-MAKE-PIPE</div>
+            <div class="t-desc">Bash pipes make output (e.g. `make test 2>&1 | tail -30`) — violates the make skill rule. mkf already captures output to build/build.out.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">For test feedback: use `make test-q` (pytest -q --tb=short) — built-in concise output, no piping needed. For other targets: run `make <target>` then `tail -n 30 build/build.out`. Or use `make <target> V=-vv` to see failures live. NEVER pipe make output.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">122</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile [limit=60]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">123</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;MKF_ACTIVE\|mkf.py\|^%:\|else$&#34; /home/drusifer/Projects/perf-dock/Makefile | head -40</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">124</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile [offset=150] [limit=80]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-MAKE-PIPE"
+        data-flags="AP-MAKE-PIPE">
+      <td class="seq">125</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make -f Makefile.prj setup 2&gt;&amp;1 | tail -60</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#f97316">
+          AP-MAKE-PIPE
+          <span class="tooltip">
+            <div class="t-code">AP-MAKE-PIPE</div>
+            <div class="t-desc">Bash pipes make output (e.g. `make test 2>&1 | tail -30`) — violates the make skill rule. mkf already captures output to build/build.out.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">For test feedback: use `make test-q` (pytest -q --tb=short) — built-in concise output, no piping needed. For other targets: run `make <target>` then `tail -n 30 build/build.out`. Or use `make <target> V=-vv` to see failures live. NEVER pipe make output.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">126</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#8b5cf6">Skill</span>
+      </td>
+      <td class="summary">skill=make  args=setup</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">127</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile [offset=160] [limit=70]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">128</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile | &#39;.PHONY: help chat test via_index install_bob update_bob pull_bob clean_bob diff_&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">129</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile | &#39;via_index: ## Build the via index required by the via MCP server\n\t@./agents/tool&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">130</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make setup V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">131</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">132</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;^perf_dock\|^tests&#34; build/build.out | head -80</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-GREP"
+        data-flags="AP-VIA-GREP">
+      <td class="seq">133</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -B1 -A1 &#34;^\s*--&gt;&#34; build/build.out | head -150; echo &#34;===&#34;; grep -c &#34;^error\|:.*: error&#34; build/build.out; sed -n &#39;1,120p&#39; build/build.out</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#8b5cf6">
+          AP-VIA-GREP
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-GREP</div>
+            <div class="t-desc">Grep/Glob used for symbol, import, or function lookup when via is enabled.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">134</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">wc -l build/build.out; sed -n &#39;120,260p&#39; build/build.out</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-GREP"
+        data-flags="AP-VIA-GREP">
+      <td class="seq">135</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -oP &#39;^\w+(?=\s)|^\w+\d+&#39; build/build.out | grep -E &#39;^[A-Z]+[0-9]+&#39; | sort | uniq -c | sort -rn
+echo &#34;---per file---&#34;
+grep -oP &#39;(?&lt;=--&gt; )[^:]+&#39; build/build.out | sort | uniq -c | sort -rn</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#8b5cf6">
+          AP-VIA-GREP
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-GREP</div>
+            <div class="t-desc">Grep/Glob used for symbol, import, or function lookup when via is enabled.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">136</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/pyproject.toml | &#39;ignore = [\n    &#34;S603&#34;,    # Subprocess check for untrusted input (we control com&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">137</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py | &#39;            result = subprocess.run(  # noqa: S603, S607\n                command&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">138</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/cpufreq.py | &#39;        result = subprocess.run(  # noqa: S603\n            [path, &#34;frequency-inf&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">139</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ppd_check.py | &#39;        result = subprocess.run(  # noqa: S603, S607\n            [&#34;systemctl&#34;, &#34;&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">140</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py [offset=1] [limit=10]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">141</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;from perf_dock.state import STATE_BALANCED, STATE_CUSTOM, STATE_ERROR, STATE_PER&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">142</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/__init__.py | &#39;&#34;&#34;&#34;Perf-Dock: A lightweight system-wide control tray applet for cpupower frequen&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">143</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py | &#39;class PerfDockController:\n    &#34;&#34;&#34;Wraps cpupower read/write operations behind a s&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">144</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py | &#39;    def set_governor(self, name: str) -&gt; bool:\n        &#34;&#34;&#34;Applies a governor cha&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">145</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/cpufreq.py | &#39;def get_frequency_steps() -&gt; list[int]:\n    &#34;&#34;&#34;Returns the sorted list of discre&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">146</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/main.py | &#39;    parser = argparse.ArgumentParser(\n        description=&#34;Perf-Dock: A system t&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">147</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/main.py | &#39;        controller = PerfDockController()\n        monitor = PerfDockMonitor(cont&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">148</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/monitor.py | &#39;    def poll_once(self) -&gt; StateSnapshot:\n        &#34;&#34;&#34;Reads current state and dis&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">149</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py [offset=150] [limit=85]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">150</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;    def update_ui(self, snapshot: StateSnapshot) -&gt; None:\n        &#34;&#34;&#34;Updates the&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">151</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;    def show_range_dialog(self) -&gt; None:\n        &#34;&#34;&#34;Opens the frequency-range di&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">152</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;    def _build_frequency_combo(self, steps: list[int], current_khz: int | None) &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">153</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;    def _selected_frequency(self, combo: Gtk.ComboBoxText, steps: list[int]) -&gt; &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">154</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-GREP"
+        data-flags="AP-VIA-GREP">
+      <td class="seq">155</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -oP &#39;(?&lt;=--&gt; )[^:]+:\d+&#39; build/build.out | sort -u</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#8b5cf6">
+          AP-VIA-GREP
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-GREP</div>
+            <div class="t-desc">Grep/Glob used for symbol, import, or function lookup when via is enabled.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">156</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">for f in perf_dock/controller.py:26 perf_dock/cpufreq.py:114 perf_dock/cpufreq.py:118 perf_dock/monitor.py:55 perf_dock/ui_indicator.py:194; do
+  file=&#34;${f%:*}&#34;; line=&#34;${f#*:}&#34;;
+  echo &#34;=== $f (len...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">157</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py | &#39;    &#34;&#34;&#34;Wraps cpupower read/write operations behind a single privilege-escalation&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">158</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/cpufreq.py | &#39;    &#34;&#34;&#34;Returns the sorted list of discrete frequency steps (kHz) this hardware s&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">159</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/monitor.py | &#39;        &#34;&#34;&#34;Reads current state, dispatching the callback if it changed since las&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">160</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/monitor.py | &#39;        &#34;&#34;&#34;Reads current state, dispatching the callback if it changed since las&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">161</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;        &#34;&#34;&#34;Opens the frequency-range dialog, pre-filled from hardware steps and &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">162</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">for ln in 20 30 38 42 54 68 78 100 116 144; do echo &#34;=== test_controller.py:$ln (len=$(sed -n &#34;${ln}p&#34; tests/test_controller.py | wc -c)) ===&#34;; sed -n &#34;${ln}p&#34; tests/test_controller.py; done
+echo &#34;...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">163</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;    @patch(&#34;perf_dock.controller.cpufreq.get_cpupower_path&#34;, return_value=&#34;/usr/&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">164</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">165</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;    def test_get_details_performance(self, _mock_policy: patch, _mock_hw: patch)&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">166</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;    def test_get_details_custom_range(self, _mock_policy: patch, _mock_hw: patch&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">167</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;    def test_get_details_error_when_cpupower_unavailable(self, _mock_policy: pat&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">168</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;    @patch(&#34;perf_dock.controller.cpufreq.get_governors&#34;, return_value=[&#34;ondemand&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">169</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;    def test_set_governor_returns_false_when_cpupower_missing(self, _mock_path: &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">170</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_cpufreq.py [offset=40] [limit=30]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">171</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_cpufreq.py | &#39;        self.assertEqual(\n            governors,\n            [&#34;conservative&#34;, &#34;o&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">172</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_cpufreq.py | &#34;            &#39;  current policy: frequency should be within 710 MHz and 3.42 GHz.\\&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">173</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_monitor.py | &#39;    def test_poll_once_uses_glib_idle_add_when_available(self, mock_glib: MagicM&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">174</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">175</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make format V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">176</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-v</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">177</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">178</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py | &#39;    def get_state(self) -&gt; str:\n        &#34;&#34;&#34;Returns just the classified state str&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">179</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py [offset=183] [limit=20]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">180</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;    def _on_governor_toggled(self, widget: Gtk.RadioMenuItem, name: str) -&gt; None&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">181</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py [offset=218] [limit=10]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">182</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;    def _on_restore_clicked(self, _widget: Gtk.MenuItem) -&gt; None:\n        logger&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">183</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/main.py [offset=65] [limit=15]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">184</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/main.py | &#39;    logger.info(&#34;Initializing Perf-Dock tray application...&#34;)\n\n    try:\n        &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">185</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py [offset=1] [limit=20]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">186</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;class TestPerfDockController(unittest.TestCase):\n    def setUp(self) -&gt; None:\n  &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">187</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">188</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;Issue\|Severity\|CWE\|Location\|perf_dock/&#34; build/build.out | grep -A3 -B1 &#34;Severity: High&#34; | head -80
+echo &#34;===full bandit section===&#34;
+awk &#39;/Running Bandit/,/Running Pylint/&#39; build/build....</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">189</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;bandit&#34; -r ../nerd-dock/pyproject.toml ../nerd-dock/*.cfg ../nerd-dock/.bandit 2&gt;/dev/null; find ../nerd-dock -iname &#34;*bandit*&#34; 2&gt;/dev/null; echo &#34;---nerd-dock subprocess calls---&#34;; grep -...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">190</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py | &#39;import logging\nimport subprocess\nfrom dataclasses import dataclass&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">191</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py | &#39;            command = [&#34;pkexec&#34;, cpupower_path, &#34;-r&#34;, &#34;frequency-set&#34;, *args]\n  &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">192</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/cpufreq.py [offset=1] [limit=20]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">193</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/cpufreq.py | &#39;import re\nimport shutil\nimport subprocess&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">194</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/cpufreq.py | &#39;        result = subprocess.run(\n            [path, &#34;frequency-info&#34;, *extra_arg&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">195</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ppd_check.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">196</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ppd_check.py | &#39;import subprocess\n\n\ndef is_ppd_active() -&gt; bool:\n    &#34;&#34;&#34;Returns True if power-pr&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">197</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py | &#39;            command = [&#34;pkexec&#34;, cpupower_path, &#34;-r&#34;, &#34;frequency-set&#34;, *args]\n  &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">198</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">199</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make test-q V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">200</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make test V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">201</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;5&#39;, &#39;status&#39;: &#39;completed&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">202</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;6&#39;, &#39;status&#39;: &#39;completed&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">203</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;7&#39;, &#39;status&#39;: &#39;completed&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">204</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Phases 1-3 implemented together (scaffolding + cpufreq/state/controller/monitor + ui_indicator/main). make lint: clean (ruff/radon/vulture/bandit/pylint all pass). make test: 37/37 p...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">205</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/neo.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">206</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/neo.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">207</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/neo.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">208</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/neo.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">209</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/neo.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">210</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/neo.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">211</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/SKILL.md [limit=80]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">212</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/docs/USER_STORIES.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">213</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">214</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*qa reject. UAT against US-1/US-2/US-4 found 4 gaps: (1) US-1 label appends &#39;(governor)&#39; even for PERFORMANCE/POWERSAVE, contradicting exact spec strings, (2) US-1 CUSTOM tooltip doe...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">215</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;    def update_ui(self, snapshot: StateSnapshot) -&gt; None:\n        &#34;&#34;&#34;Updates the&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">216</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;INSTALL_HINT = (\n    &#34;cpupower was not found on this system.\\n&#34;\n    &#34;Debian/Ubun&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">217</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;    def _on_governor_toggled(self, widget: Gtk.RadioMenuItem, name: str) -&gt; None&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">218</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;        response = dialog.run()\n        if response == Gtk.ResponseType.OK:\n    &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">219</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;    def _on_restore_clicked(self, _widget: Gtk.MenuItem) -&gt; None:\n        if sel&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">220</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">PYTHONPATH=. python3 -c &#34;from perf_dock import ui_indicator; print(&#39;OK&#39;)&#34; 2&gt;&amp;1</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">221</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_ui_indicator.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">222</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">223</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make format V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-GREP"
+        data-flags="AP-VIA-GREP">
+      <td class="seq">224</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;would be reformatted\|^E501\|--&gt;&#34; build/build.out | head -20</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#8b5cf6">
+          AP-VIA-GREP
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-GREP</div>
+            <div class="t-desc">Grep/Glob used for symbol, import, or function lookup when via is enabled.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">225</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">sed -n &#39;170,180p;250,258p&#39; perf_dock/ui_indicator.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">226</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">sed -n &#39;1,25p&#39; build/build.out</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">227</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;            label = (\n                f&#34;Perf-Dock: Custom {_format_freq(snapshot&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">228</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py | &#39;            if not self.controller.set_range(min_khz, max_khz):\n                &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">229</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;GHz\|MHz&#34; /home/drusifer/Projects/perf-dock/tests/test_ui_indicator.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">230</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">231</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make test V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">232</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Fixed all 4 UAT gaps: label logic now only appends governor for BALANCED, CUSTOM shows numeric range via new _format_freq(), dialog validates min&lt;=max with error dialog, all 3 mutati...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">233</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/ui_indicator.py [offset=160] [limit=40]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">234</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*qa pass. Verified all 4 fixes against US-1/US-2/US-4 acceptance criteria directly in code: label logic, custom-range display, min&gt;max validation, failure notifications all correct. ...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">235</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">236</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">237</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">238</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">239</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">240</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">241</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*lead review PASS. Architecture matches ARCH.md: clean separation (cpufreq=read-only I/O, state=pure logic, controller=mutation+privilege, monitor=polling, ui_indicator=presentation)...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">242</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">243</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">244</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">245</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/morpheus.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">246</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">wc -l /home/drusifer/Projects/perf-dock/agents/CHAT.md; echo &#34;---&#34;; cat /home/drusifer/Projects/perf-dock/agents/oracle.docs/SKILL.md 2&gt;/dev/null | head -60</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">247</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls /home/drusifer/Projects/perf-dock/*.md 2&gt;/dev/null; echo &#34;---docs---&#34;; ls /home/drusifer/Projects/perf-dock/docs/; echo &#34;---oracle docs existing---&#34;; ls /home/drusifer/Projects/perf-dock/agents/...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">248</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/lessons.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">249</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/memory.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">250</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/memory.md | &#39;## Project Context\n- **Project Name:** Bob Protocol\n- **Start Date:** [Date]\n- *&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">251</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/lessons.md | &#39;### References\n- **Files:** `agents/*/SKILL.md`, `agents/oracle.docs/lessons.md`&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">252</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/README.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">253</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/nerd-dock/docs/USER_GUIDE.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">254</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/docs/USER_GUIDE.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">255</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">256</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">257</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">258</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/context.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">259</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">260</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">261</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Docs groomed: README.md + docs/USER_GUIDE.md written, memory.md/lessons.md updated with this sprint&#39;s decisions (pkexec approach, ppd handling, cpufreq parsing strategy) and 2 proces...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV"
+        data-flags="AP-RAW-VENV">
+      <td class="seq">262</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">echo &#34;DISPLAY=$DISPLAY WAYLAND_DISPLAY=$WAYLAND_DISPLAY XDG_SESSION_TYPE=$XDG_SESSION_TYPE&#34;
+echo &#34;---&#34;
+PYTHONPATH=. venv/bin/python3 -c &#34;
+from perf_dock import cpufreq
+print(&#39;is_available:&#39;, cpufre...</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV"
+        data-flags="AP-RAW-VENV">
+      <td class="seq">263</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">PYTHONPATH=. venv/bin/python3 -c &#34;
+from perf_dock.controller import PerfDockController
+c = PerfDockController()
+d = c.get_details()
+print(d)
+&#34;</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">264</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*user bug CMD: PerfDockController().get_details() on real hardware | EXPECTED: state=PERFORMANCE (governor=performance, full range) | ACTUAL: state=CUSTOM (policy_min=710000 vs hw_mi...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">265</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Triaged: correctness bug (not UX) — classify_state() exact-equality is wrong given cpupower&#39;s mixed precision. @Neo *swe fix state.py tolerance comparison&#34; PERSONA=&#34;Trin&#34; CMD=&#34;qa tri...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">266</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/state.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">267</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/state.py | &#39;_GOVERNOR_STATE_MAP = {\n    &#34;performance&#34;: STATE_PERFORMANCE,\n    &#34;powersave&#34;: S&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">268</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_state.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">269</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_state.py | &#39;    def test_narrowed_max_only_is_custom(self) -&gt; None:\n        state = classify&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV"
+        data-flags="AP-RAW-VENV">
+      <td class="seq">270</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">PYTHONPATH=. venv/bin/python3 -c &#34;
+from perf_dock.controller import PerfDockController
+c = PerfDockController()
+print(c.get_details())
+&#34;</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">271</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">272</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_state.py | &#39;    def test_small_deviation_within_tolerance_is_not_custom(self) -&gt; None:\n     &#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">273</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">274</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make test V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV"
+        data-flags="AP-RAW-VENV">
+      <td class="seq">275</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">DISPLAY=:0 WAYLAND_DISPLAY=wayland-0 timeout 5 venv/bin/python3 -m perf_dock.main --verbose &gt; /tmp/claude-1001/-home-drusifer-Projects-perf-dock/d7dbab9d-790c-41f1-a94b-2de3572f3d6e/scratchpad/perf...</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">276</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Verified: classify_state() fix confirmed against real hardware (StateSnapshot now shows PERFORMANCE, not CUSTOM). 43/43 tests, lint clean. Also live-ran &#39;make run&#39; for 5s under real ...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">277</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/lessons.md | &#39;### References\n- **Files:** `pyproject.toml`, `perf_dock/controller.py`, `perf_d&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">278</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*user approve. E2E test complete: real hardware run confirms correct PERFORMANCE state, clean boot/shutdown, notifications OK. Note: could not interactively click tray menu/dialog/pk...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">279</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">280</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/current_task.md | &#39;**Status:** Gate 2 complete; next touchpoint is end-of-sprint usability test\n**A&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">281</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Neo retro: cpupower&#39;s mixed output precision (rounded -p vs exact -l) was the one real surprise; everything else matched ARCH.md cleanly. Backlog: custom .policy file for nicer pkexe...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">282</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls /home/drusifer/Projects/perf-dock/scripts 2&gt;&amp;1; mkdir -p /home/drusifer/Projects/perf-dock/scripts</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">283</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/scripts/e2e_smoke.sh</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">284</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">chmod +x /home/drusifer/Projects/perf-dock/scripts/e2e_smoke.sh</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">285</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile.prj</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">286</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile.prj | &#39;.PHONY: all setup run test lint format clean help install-system-deps install&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">287</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile.prj | &#39;test: ## Run unit tests with pytest\n\t@echo &#34;Running unit tests...&#34;\n\tPYTHONPATH=.&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">288</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/scripts/e2e_smoke.sh | &#39;timeout &#34;$DURATION&#34; python3 -m perf_dock.main --verbose &gt; &#34;$LOG&#34; 2&gt;&amp;1&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">289</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile.prj | &#39;e2e: ## Boot the real app briefly and verify clean startup/shutdown (skips if no&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">290</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile | &#39;.PHONY: help chat test via_index install_bob update_bob pull_bob clean_bob diff_&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">291</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile | &#39;run: ## Run the perf-dock tray application (Makefile.prj)\n\t@./agents/tools/mkf.p&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">292</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make e2e V=-vvv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">293</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/README.md [offset=98] [limit=12]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">294</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/README.md [offset=106] [limit=10]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">295</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/README.md | &#39;```bash\nmake test    # unit tests, all subprocess/cpupower calls mocked — no roo&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">296</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/docs/USER_STORIES.md | &#39;  - `make test` runs a headless unit test suite that mocks all `subprocess` call&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">297</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">298</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Added automated e2e gate (user request mid-retro): &#39;make e2e&#39; boots the real app for 5s against real cpupower/GTK, verifies clean start/stop, skips gracefully if no display. Wired in...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">299</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/neo.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">300</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/neo.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">301</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/neo.docs/next_steps.md | &#34;## Immediate Next Action\nWait for Trin&#39;s UAT result. If Trin finds failures, fix&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">302</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/cypher.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">303</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/cypher.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">304</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/cypher.docs/current_task.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">305</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/cypher.docs/next_steps.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">306</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;*pm launch perf-dock-v1. Sprint complete: GNOME tray applet for cpupower frequency scaling, modeled on nerd-dock. Full cycle run: PRD/stories -&gt; 2 Smith gates -&gt; ARCH -&gt; 3 phases -&gt; ...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">307</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;8&#39;, &#39;status&#39;: &#39;completed&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">308</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git status &amp;&amp; echo &#34;---REMOTE---&#34; &amp;&amp; git remote -v &amp;&amp; echo &#34;---LOG---&#34; &amp;&amp; git log --oneline -10</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">309</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat .gitignore | head -50</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">310</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;^venv\|/venv\|^\.via\|\.mcp\.json&#34; .gitignore</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">311</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;via\|mcp&#34; .gitignore ../nerd-dock/.gitignore 2&gt;/dev/null; echo &#34;---mcp.json content---&#34;; cat .mcp.json; echo &#34;---.via contents---&#34;; ls -la .via/</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">312</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">wc -l .gitignore; tail -30 .gitignore</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">313</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/.gitignore [offset=205] [limit=14]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">314</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/.gitignore | &#39;# Streamlit\n.streamlit/secrets.toml&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">315</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git add -A &amp;&amp; git status</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">316</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git diff --cached --stat | tail -5
+echo &#34;---secret scan---&#34;
+git diff --cached --name-only | xargs grep -liE &#34;api[_-]?key|secret|password|token|BEGIN (RSA|OPENSSH|PRIVATE)&#34; 2&gt;/dev/null</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">317</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -inE &#34;api[_-]?key|secret|password|token&#34; docs/PRD.md docs/USER_GUIDE.md docs/USER_STORIES.md perf_dock/cpufreq.py agents/oracle.docs/memory.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">318</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git commit -m &#34;$(cat &lt;&lt;&#39;EOF&#39;
+Add perf-dock v1: GNOME tray applet for cpupower frequency scaling
+
+Full implementation modeled on ../nerd-dock: cpufreq.py (read-only
+cpupower wrapper), state.py (pure...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">319</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git push origin main</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">320</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cpupower -r frequency-set -g performance 2&gt;&amp;1; echo &#34;exit=$?&#34;
+echo &#34;---correct form---&#34;
+cpupower frequency-set -r -g performance 2&gt;&amp;1; echo &#34;exit=$?&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">321</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py [offset=95] [limit=15]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">322</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/perf_dock/controller.py | &#39;            command = [&#34;pkexec&#34;, cpupower_path, &#34;-r&#34;, &#34;frequency-set&#34;, *args]&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">323</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#39;&#34;pkexec&#34;&#39; /home/drusifer/Projects/perf-dock/tests/test_controller.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">324</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py [offset=70] [limit=100]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">325</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;        mock_run.assert_called_once_with(\n            [&#34;pkexec&#34;, &#34;/usr/bin/cpupo&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">326</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;        mock_run.assert_called_once_with(\n            [\n                &#34;pkexec&#34;&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">327</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;        mock_run.assert_called_once_with(\n            [&#34;pkexec&#34;, &#34;/usr/bin/cpupo&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">328</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller.py | &#39;        mock_run.assert_called_once_with(\n            [\n                &#34;pkexec&#34;&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">329</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller_integration.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">330</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_controller_integration.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-MAKE-BYPASS ap-AP-RAW-VENV"
+        data-flags="AP-MAKE-BYPASS AP-RAW-VENV">
+      <td class="seq">331</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">PYTHONPATH=. venv/bin/python3 -m pytest tests/test_controller_integration.py -v 2&gt;&amp;1 | tail -20</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#ef4444">
+          AP-MAKE-BYPASS
+          <span class="tooltip">
+            <div class="t-code">AP-MAKE-BYPASS</div>
+            <div class="t-desc">Bash runs pytest/ruff/pylint/mypy directly — bypasses make targets.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Always use make <target>. Never call test runners or linters directly. Output is captured to build/build.out by the Makefile.</div>
+          </span>
+        </span>
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV"
+        data-flags="AP-RAW-VENV">
+      <td class="seq">332</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">PYTHONPATH=. venv/bin/python3 -c &#34;
+import subprocess, shutil
+CPUPOWER_PATH = shutil.which(&#39;cpupower&#39;)
+# the OLD (buggy) order:
+result = subprocess.run([CPUPOWER_PATH, &#39;-r&#39;, &#39;frequency-set&#39;, &#39;-g&#39;, &#39;...</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">333</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">334</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make test V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">335</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/lessons.md [offset=1] [limit=5]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">336</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">tail -5 /home/drusifer/Projects/perf-dock/agents/oracle.docs/lessons.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">337</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/lessons.md | &#39;### Fix\n`classify_state()` now uses a tolerance-based comparison (`_RANGE_TOLERA&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">338</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/oracle.docs/lessons.md | &#39;### The Fix\n`classify_state()` now uses a tolerance-based comparison (`_RANGE_TO&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">339</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;User-reported bug fixed: cpupower -r flag was positioned before &#39;frequency-set&#39; (global-option slot) instead of after (its real position per cpupower-frequency-set(1)), causing &#39;Unkn...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">340</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git status</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">341</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git add -A &amp;&amp; git status --short</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">342</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git commit -m &#34;$(cat &lt;&lt;&#39;EOF&#39;
+Fix cpupower -r flag position in privileged frequency-set calls
+
+The -r/--related flag is a frequency-set subcommand option, not a
+global cpupower flag, and must come a...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">343</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">git push origin main</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">344</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskCreate</span>
+      </td>
+      <td class="summary">{&#39;subject&#39;: &#39;Judge loop: skills and tool use this session&#39;, &#39;description&#39;: &#39;Run the judge workflow (Trin trace -&gt; Smith </td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">345</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make judge-trace V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">346</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;judge&#34; /home/drusifer/Projects/perf-dock/Makefile.prj /home/drusifer/Projects/perf-dock/Makefile 2&gt;/dev/null; echo &#34;---&#34;; find /home/drusifer/Projects/perf-dock -iname &#34;*trace_annotate*&#34; -...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">347</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">head -80 /home/drusifer/Projects/perf-dock/agents/tools/trace_annotate.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-RAW-VENV ap-AP-VIA-GREP"
+        data-flags="AP-RAW-VENV AP-VIA-GREP">
+      <td class="seq">348</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">venv/bin/python3 -c &#34;import jinja2; print(&#39;yes&#39;)&#34; 2&gt;&amp;1; python3 -c &#34;import jinja2; print(&#39;yes&#39;)&#34; 2&gt;&amp;1
+echo &#34;---full trace_annotate.py to check md path---&#34;
+grep -n &#34;format\|def main\|argparse&#34; /home...</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#dc2626">
+          AP-RAW-VENV
+          <span class="tooltip">
+            <div class="t-code">AP-RAW-VENV</div>
+            <div class="t-desc">Bash calls .venv/bin/<tool> directly — bypasses make targets and project tooling.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</div>
+          </span>
+        </span>
+        
+        
+        <span class="badge" style="background:#8b5cf6">
+          AP-VIA-GREP
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-GREP</div>
+            <div class="t-desc">Grep/Glob used for symbol, import, or function lookup when via is enabled.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">349</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;add_argument\|args\.date\b&#34; /home/drusifer/Projects/perf-dock/agents/tools/trace_annotate.py | head -10</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">350</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile.prj | &#39;.PHONY: all setup run test e2e lint format clean help install-system-deps instal&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">351</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile.prj | &#39;e2e: ## Boot the real app briefly and verify clean startup/shutdown (skips if no&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">352</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile | &#39;.PHONY: help chat test via_index install_bob update_bob pull_bob clean_bob diff_&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">353</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/Makefile | &#39;e2e: ## Boot the real app briefly, verify clean startup/shutdown (Makefile.prj)\n&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">354</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make judge-trace FORMAT=md V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">355</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/judge_tool_trace.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">356</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">cat /home/drusifer/Projects/perf-dock/agents/tools/trace_rules.json 2&gt;/dev/null | head -60</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-GREP"
+        data-flags="AP-VIA-GREP">
+      <td class="seq">357</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;AP-MAKE-BYPASS\|AP_MAKE_BYPASS\|make_bypass\|def detect\|def scan\|def check_\|re\.compile\|re\.search\|re\.match&#34; /home/drusifer/Projects/perf-dock/agents/tools/trace_annotate.py | head -60</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#8b5cf6">
+          AP-VIA-GREP
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-GREP</div>
+            <div class="t-desc">Grep/Glob used for symbol, import, or function lookup when via is enabled.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">358</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/tools/trace_annotate.py [offset=120] [limit=220]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">359</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">find /home/drusifer/Projects/perf-dock -iname &#34;*test*trace*&#34; 2&gt;/dev/null; grep -rn &#34;trace_annotate\|classify_bash&#34; /home/drusifer/Projects/perf-dock --include=&#34;*.py&#34; -l 2&gt;/dev/null | grep -v &#34;^/hom...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">360</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make judge-trace FORMAT=html V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">361</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#94a3b8">SendUserFile</span>
+      </td>
+      <td class="summary">{&#39;files&#39;: [&#39;/home/drusifer/Projects/perf-dock/agents/trin.docs/judge_tool_trace.html&#39;], &#39;caption&#39;: &#39;Annotated tool-use trace for this sessio</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">362</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/judge_session_trace.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">363</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/judge_session_trace.md | &#39;## Handoff\nRaw: 353→359 calls (session still active during trace generation), 15&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-GREP"
+        data-flags="AP-VIA-GREP">
+      <td class="seq">364</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Session trace reviewed: 6 confirmed anti-patterns (2 pipe, 3 bypass, 1 via-grep), 1 detector bug found (MAKE_BYPASS_RE false-flags tool names mentioned inside make chat MSG prose), 6...</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#8b5cf6">
+          AP-VIA-GREP
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-GREP</div>
+            <div class="t-desc">Grep/Glob used for symbol, import, or function lookup when via is enabled.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">365</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;9&#39;, &#39;status&#39;: &#39;in_progress&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">366</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/bugs.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">367</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/smith.docs/trace_eval.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">368</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Score: 76/100. Below 90 bar. 1 real code bug found (BUG-001: MAKE_BYPASS_RE regex has no quote-awareness, false-flags make chat MSG prose). Full breakdown: agents/smith.docs/trace_ev...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">369</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/tools/trace_annotate.py [offset=124] [limit=40]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">370</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/tools/trace_annotate.py | &#34;MAKE_BYPASS_RE = re.compile(\n    r&#39;(?:^|\\s|;|&amp;&amp;|\\|\\|)(?:\\.venv/bin/|venv/bin/)?(&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">371</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/tools/trace_annotate.py | &#39;def classify_bash(cmd: str) -&gt; list[str]:\n    flags = []\n    if MAKE_BYPASS_RE.s&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">372</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_trace_annotate.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">373</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make test V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">374</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/tools/trace_annotate.py [offset=128] [limit=10]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">375</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/tools/trace_annotate.py | &#34;VENV_RE = re.compile(r&#39;\\.venv/bin/\\w+&#39;)&#34;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">376</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make test V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">377</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="flagged ap-AP-VIA-GREP"
+        data-flags="AP-VIA-GREP">
+      <td class="seq">378</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -n &#34;^perf_dock\|--&gt;&#34; build/build.out | head -10</td>
+      <td class="badges">
+        
+        
+        <span class="badge" style="background:#8b5cf6">
+          AP-VIA-GREP
+          <span class="tooltip">
+            <div class="t-code">AP-VIA-GREP</div>
+            <div class="t-desc">Grep/Glob used for symbol, import, or function lookup when via is enabled.</div>
+            <div class="t-fix-lbl">Fix</div>
+            <div class="t-fix">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</div>
+          </span>
+        </span>
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">379</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">sed -n &#39;13p;42p;50p&#39; /home/drusifer/Projects/perf-dock/tests/test_trace_annotate.py</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">380</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_trace_annotate.py | &#39;_MODULE_PATH = Path(__file__).resolve().parent.parent / &#34;agents&#34; / &#34;tools&#34; / &#34;tr&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">381</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_trace_annotate.py | &#39;        cmd = (\n            \&#39;make chat MSG=&#34;ARCH.md complete. pylint 10/10, no d&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">382</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/tests/test_trace_annotate.py | &#39;        cmd = (\n            \&#39;make chat MSG=&#34;Docs groomed: 2 process lessons (ruf&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">383</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">384</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make format V=-vv &amp;&amp; make lint V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">385</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make test V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">386</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;BUG-001 fixed: MAKE_BYPASS_RE now strips quoted string content from &#39;make chat&#39; commands before matching, so tool names mentioned in chat prose no longer false-flag. Also fixed a rel...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">387</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/bob.docs/SKILL.md [limit=40]</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">388</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/.claude/skills/make/SKILL.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">389</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls -la /home/drusifer/Projects/perf-dock/.claude/skills/make</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">390</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">ls -la /home/drusifer/Projects/perf-dock/agents/skills/make/SKILL.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">391</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#10b981">Edit</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/skills/make/SKILL.md | &#39;One-line summary: Run `make &lt;target&gt;` — never call mkf.py directly, never pipe m&#39;</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">392</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#3b82f6">Read</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/skills/make-discover/SKILL.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">393</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Added proactive-load guidance to agents/skills/make/SKILL.md: check for a Makefile / load this skill BEFORE the first raw build command, not after a bypass/pipe already happened. Cit...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">394</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make judge-trace FORMAT=md V=-vv</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">395</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">tail -15 /home/drusifer/Projects/perf-dock/agents/trin.docs/judge_tool_trace.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">396</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">grep -B1 &#34;AP-MAKE-BYPASS\]&#34; /home/drusifer/Projects/perf-dock/agents/trin.docs/judge_tool_trace.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">397</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#f59e0b">Write</span>
+      </td>
+      <td class="summary">/home/drusifer/Projects/perf-dock/agents/trin.docs/judge_session_verify.md</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">398</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#64748b">Bash</span>
+      </td>
+      <td class="summary">make chat MSG=&#34;Verification complete. BUG-001 confirmed fixed (both false-positive make-chat flags gone, zero real detections lost). VENV_RE fix surfaced 7 real AP-RAW-VENV findings previously invi...</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+    <tr class="clean"
+        data-flags="">
+      <td class="seq">399</td>
+      <td class="tool">
+        <span class="tool-chip" style="background:#84cc16">TaskUpdate</span>
+      </td>
+      <td class="summary">{&#39;taskId&#39;: &#39;9&#39;, &#39;status&#39;: &#39;completed&#39;}</td>
+      <td class="badges">
+        
+      </td>
+    </tr>
+    
+  </table>
+</details>
+
+</div>
+
+<div class="summary-section">
+  <h2>Summary</h2>
+  <table class="sum-table">
+    <tr><th>Anti-Pattern</th><th>Count</th><th>Fix</th></tr>
+    
+    
+    <tr>
+      <td><span class="badge" style="background:#8b5cf6">AP-VIA-GREP</span></td>
+      <td class="count">8</td>
+      <td style="color:#94a3b8">Use mcp__via__via_query for symbol/relationship lookups. Reserve grep for content search (strings in files), not symbol navigation.</td>
+    </tr>
+    
+    
+    <tr>
+      <td><span class="badge" style="background:#dc2626">AP-RAW-VENV</span></td>
+      <td class="count">7</td>
+      <td style="color:#94a3b8">Use make <target> — never reference .venv/bin directly. If no make target exists for the tool, add one to Makefile.prj rather than calling .venv/bin.</td>
+    </tr>
+    
+    
+    <tr>
+      <td><span class="badge" style="background:#ef4444">AP-MAKE-BYPASS</span></td>
+      <td class="count">4</td>
+      <td style="color:#94a3b8">Always use make <target>. Never call test runners or linters directly. Output is captured to build/build.out by the Makefile.</td>
+    </tr>
+    
+    
+    <tr>
+      <td><span class="badge" style="background:#a855f7">AP-VIA-READ</span></td>
+      <td class="count">2</td>
+      <td style="color:#94a3b8">Use mcp__via__via_query to locate symbols and trace relationships. Read is only needed when you intend to edit the file or need its full content for review.</td>
+    </tr>
+    
+    
+    <tr>
+      <td><span class="badge" style="background:#f97316">AP-MAKE-PIPE</span></td>
+      <td class="count">2</td>
+      <td style="color:#94a3b8">For test feedback: use `make test-q` (pytest -q --tb=short) — built-in concise output, no piping needed. For other targets: run `make <target>` then `tail -n 30 build/build.out`. Or use `make <target> V=-vv` to see failures live. NEVER pipe make output.</td>
+    </tr>
+    
+  </table>
+</div>
+
+<script>
+const ALL_APS = ["AP-SKILL-RELOAD", "AP-MAKE-BYPASS", "AP-RAW-VENV", "AP-MAKE-PIPE", "AP-VIA-GREP", "AP-VIA-READ", "AP-DUP-READ"];
+let activeFilters = new Set(ALL_APS);
+
+function updateRows() {
+  document.querySelectorAll('tr[data-flags]').forEach(row => {
+    const flags = row.dataset.flags ? row.dataset.flags.split(' ').filter(Boolean) : [];
+    if (flags.length === 0) {
+      row.classList.remove('hidden');
+      return;
+    }
+    // Show row if ANY of its flags are active
+    const visible = flags.some(f => activeFilters.has(f));
+    row.classList.toggle('hidden', !visible);
+  });
+}
+
+function filterAP(btn, code) {
+  if (activeFilters.has(code)) {
+    activeFilters.delete(code);
+    btn.classList.remove('active');
+    btn.classList.add('inactive');
+  } else {
+    activeFilters.add(code);
+    btn.classList.remove('inactive');
+    btn.classList.add('active');
+  }
+  updateRows();
+}
+
+function filterAll(btn) {
+  const allActive = activeFilters.size === ALL_APS.length;
+  if (allActive) {
+    activeFilters.clear();
+    document.querySelectorAll('.filter-btn[data-ap]').forEach(b => {
+      b.classList.remove('active'); b.classList.add('inactive');
+    });
+    btn.textContent = 'Show All';
+  } else {
+    activeFilters = new Set(ALL_APS);
+    document.querySelectorAll('.filter-btn[data-ap]').forEach(b => {
+      b.classList.add('active'); b.classList.remove('inactive');
+    });
+    btn.textContent = 'Show All';
+  }
+  updateRows();
+}
+</script>
+</body>
+</html>

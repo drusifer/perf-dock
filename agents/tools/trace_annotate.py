@@ -129,7 +129,12 @@ MAKE_BYPASS_RE = re.compile(
     r'(?:^|\s|;|&&|\|\|)(?:\.venv/bin/|venv/bin/)?(pytest|ruff|pylint|mypy|black|isort|coverage|py\.test)\b',
     re.MULTILINE
 )
-VENV_RE = re.compile(r'\.venv/bin/\w+')
+# `make chat MSG="..."` commonly reports on tool results in prose (e.g. "pylint
+# 10/10"), which would otherwise false-trigger MAKE_BYPASS_RE on the tool name
+# appearing inside the quoted message rather than as an actual invocation.
+MAKE_CHAT_RE = re.compile(r'\bmake\s+chat\b')
+QUOTED_STRING_RE = re.compile(r'"[^"]*"|\'[^\']*\'')
+VENV_RE = re.compile(r'(?:^|\s|;|&&|\|\|)(?:\.venv|venv)/bin/\w+')
 # Only flag `make <target> ... |` when <target> is actually routed through mkf.py
 # (captured to build/build.out, per the Makefile's interception layer). Targets
 # excluded from mkf capture (chat, help, install_bob, update_bob, pull_bob,
@@ -148,7 +153,8 @@ SOURCE_EXTENSIONS = {'.py', '.ts', '.tsx', '.js', '.jsx', '.go', '.rs', '.rb'}
 
 def classify_bash(cmd: str) -> list[str]:
     flags = []
-    if MAKE_BYPASS_RE.search(cmd):
+    bypass_text = QUOTED_STRING_RE.sub('', cmd) if MAKE_CHAT_RE.search(cmd) else cmd
+    if MAKE_BYPASS_RE.search(bypass_text):
         flags.append('AP-MAKE-BYPASS')
     if VENV_RE.search(cmd):
         flags.append('AP-RAW-VENV')

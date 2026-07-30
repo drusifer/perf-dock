@@ -29,7 +29,7 @@ via: enabled   # or: via: disabled
 ## Project Standards
 <List any project-specific coding standards, naming conventions, or constraints
 that ALL personas should follow. Keep this short — detailed standards belong in
-individual persona state files (context.md).>
+individual persona state files (state.md).>
 
 ## Key Artifacts
 <List the most important files personas should know about on cold start.

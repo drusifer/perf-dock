@@ -56,7 +56,7 @@ Chain: Neo → Trin → Morpheus → [Tank if deploy in scope] → [Smith if UX/
 
 | Step | Persona | Action |
 |------|---------|--------|
-| 0 | (bloop) | If `<phase>` is "next phase": read `agents/mouse.docs/current_task.md` and echo "Resolved: next phase = Phase N. Proceeding." before starting chain |
+| 0 | (bloop) | If `<phase>` is "next phase": read `agents/mouse.docs/state.md` (Current Task section) and echo "Resolved: next phase = Phase N. Proceeding." before starting chain |
 | 1 | Neo | TDD implementation: `*swe impl <phase>` |
 | 2 | Trin | UAT — run tests, verify acceptance criteria: `*qa uat <phase>` (unit + integration only; E2E requires a separate `@Trin *qa e2e` invocation) |
 | 3 | Morpheus | Code review — quality and architecture: `*lead review <phase>` |

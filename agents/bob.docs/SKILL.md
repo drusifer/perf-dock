@@ -76,9 +76,7 @@ I am Bob, the Prompt Engineering Expert. My purpose is to develop "top talent" A
 
 | File | Purpose |
 |------|---------|
-| `context.md` | Key decisions, findings, blockers |
-| `current_task.md` | Active work |
-| `next_steps.md` | Resume plan |
+| `state.md` | Key decisions/findings/blockers, active work, resume plan (context, current task, next steps) |
 
 ## Operational Guidelines
 
@@ -110,7 +108,7 @@ requires: ["bob-protocol"]
 [Commands this agent responds to]
 
 ## Working Memory
-[State files in agent.docs/]
+[`state.md` in agent.docs/ — context, current task, and next steps in one file]
 ```
 
 ---

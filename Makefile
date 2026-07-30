@@ -34,16 +34,12 @@ install_bob: ## Copy agents into a project and set up skill links (usage: make i
 	@[ -d "$(TARGET)" ] || { echo "Error: $(TARGET) does not exist"; exit 1; }
 	@echo "Installing BobProtocol into $(TARGET)..."
 	@rsync -a \
-		--exclude='*.docs/context.md' \
-		--exclude='*.docs/current_task.md' \
-		--exclude='*.docs/next_steps.md' \
+		--exclude='*.docs/state.md' \
 		--exclude='CHAT.md' \
 		agents/ $(TARGET)/agents/
 	@echo "Initialising agent state files..."
 	@for dir in $(TARGET)/agents/*.docs; do \
-		cp agents/templates/_template_context.md    $$dir/context.md; \
-		cp agents/templates/_template_current_task.md $$dir/current_task.md; \
-		cp agents/templates/_template_next_steps.md $$dir/next_steps.md; \
+		cp agents/templates/_template_state.md $$dir/state.md; \
 	done
 	@cp agents/templates/_template_CHAT.md $(TARGET)/agents/CHAT.md
 	@echo "Installing Makefile into $(TARGET)..."
@@ -79,9 +75,7 @@ update_bob: ## Update bob-protocol personas, skills, tools, and templates in a t
 	done
 	@echo "Ensuring agent state files are initialised..."
 	@for dir in $(TARGET)/agents/*.docs; do \
-		[ -f $$dir/context.md ]      || cp agents/templates/_template_context.md      $$dir/context.md; \
-		[ -f $$dir/current_task.md ] || cp agents/templates/_template_current_task.md $$dir/current_task.md; \
-		[ -f $$dir/next_steps.md ]   || cp agents/templates/_template_next_steps.md   $$dir/next_steps.md; \
+		[ -f $$dir/state.md ] || cp agents/templates/_template_state.md $$dir/state.md; \
 	done
 	@[ -f $(TARGET)/agents/CHAT.md ] || cp agents/templates/_template_CHAT.md $(TARGET)/agents/CHAT.md
 	@echo "Updating Makefile in $(TARGET)..."
@@ -121,9 +115,7 @@ clean_bob: ## Remove generated symlinks and reset agent memory/state files
 	@python agents/tools/teardown_agent_links.py --keep-mcp
 	@echo "Resetting agent state files to templates..."
 	@for dir in agents/*.docs; do \
-		cp agents/templates/_template_context.md    $$dir/context.md; \
-		cp agents/templates/_template_current_task.md $$dir/current_task.md; \
-		cp agents/templates/_template_next_steps.md $$dir/next_steps.md; \
+		cp agents/templates/_template_state.md $$dir/state.md; \
 	done
 	@cp agents/templates/_template_CHAT.md agents/CHAT.md
 	@echo "Done. Environment cleaned and state reset."
@@ -164,7 +156,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat test via_index install_bob update_bob pull_bob clean_bob diff_bob setup run e2e lint format clean install install-system-deps
+.PHONY: help chat test via_index install_bob update_bob pull_bob clean_bob diff_bob setup run e2e judge-trace lint format clean install install-system-deps
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -226,6 +218,9 @@ run: ## Run the perf-dock tray application (Makefile.prj)
 	@./agents/tools/mkf.py $(V) $@
 
 e2e: ## Boot the real app briefly, verify clean startup/shutdown (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
+judge-trace: ## Extract annotated tool-use trace from Claude session JSONL (Makefile.prj)
 	@./agents/tools/mkf.py $(V) $@
 
 lint: ## Run static analysis: ruff, radon, vulture, bandit, pylint (Makefile.prj)

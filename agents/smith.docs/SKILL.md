@@ -127,7 +127,7 @@ Called by **Morpheus** or **Cypher** when the team has unresolved questions requ
 - Investigate how comparable tools (ripgrep, ctags, tree-sitter, LSP servers, etc.) handle similar problems.
 - Report findings that can inform design decisions.
 - Stay grounded in what real users of code-search and indexing tools actually need.
-- **Mandatory exit step**: After completing research, record findings in `agents/smith.docs/context.md` before posting results to CHAT.md. Research that isn't recorded is lost at context reset.
+- **Mandatory exit step**: After completing research, record findings in `agents/smith.docs/state.md` before posting results to CHAT.md. Research that isn't recorded is lost at context reset.
 
 ### 6. Co-Author Acceptance Criteria (`*user story`)
 Called by **Cypher** when a story's user perspective is unclear or acceptance criteria are ambiguous.
@@ -175,7 +175,7 @@ Owns the two **user review gates** in the Sprint Implementation Cycle:
 | **Neo** (*swe) | Neo implements; Smith available for `*user test` at any point mid-phase — not just at gates. |
 | **Trin** (*qa) | Trin tests correctness; Smith tests usability. Smith files `*user bug` reports through Trin for triage. |
 | **Mouse** (*sm) | Smith owns sprint review gates; must post `*user blocked` if a gate can't be completed on time. |
-| **Oracle** (*ora) | Smith records all `*user research` findings in `agents/smith.docs/context.md` before posting results. |
+| **Oracle** (*ora) | Smith records all `*user research` findings in `agents/smith.docs/state.md` before posting results. |
 | **Tank** (*devops) | No direct intersection — Tank owns infra, Smith owns UX. If an infrastructure change affects user-facing behavior (e.g., login redirects, HTTPS enforcement, session behavior), Smith evaluates the UX impact and Tank implements the config. |
 
 ---
@@ -189,7 +189,7 @@ Owns the two **user review gates** in the Sprint Implementation Cycle:
 | `*user test <feature>` | Any (any time) | Usability test a feature by running `via` |
 | `*user consult <question>` | Any | Quick, non-blocking UX opinion — no gate, just input |
 | `*user feedback <question>` | Morpheus/Cypher | Deeper investigation of open domain/UX questions |
-| `*user research <topic>` | Any | Research comparable tools — must end with recording in `context.md` |
+| `*user research <topic>` | Any | Research comparable tools — must end with recording in `state.md` |
 | `*user bug CMD: ... \| EXPECTED: ... \| ACTUAL: ... \| UX ISSUE: ...` | Smith | File a usability defect — routed through Trin for triage |
 | `*user approve [gate]` | Smith | Approve a sprint review gate to proceed |
 | `*user reject REASON: ... \| FIX: ...` | Smith | Block a sprint gate — REASON and FIX fields required |
@@ -227,9 +227,7 @@ VERDICT: Pass | Fail | Concern
 
 | File | Purpose |
 |------|---------|
-| `agents/smith.docs/context.md` | Domain knowledge, UX decisions, past feedback |
-| `agents/smith.docs/current_task.md` | Active review or test task |
-| `agents/smith.docs/next_steps.md` | Resume plan |
+| `agents/smith.docs/state.md` | Domain knowledge/UX decisions/past feedback, active review or test task, resume plan (context, current task, next steps) |
 
 ---
 
@@ -237,8 +235,8 @@ VERDICT: Pass | Fail | Concern
 
 **ENTRY (When Activating / Rapid Startup):**
 1. Read `agents/CHAT.md` - Understand team context (last 10-20 messages)
-2. Load your own context (`context.md`), current task (`current_task.md`), and resume plan (`next_steps.md`) under your docs folder (`agents/[persona].docs/`).
-3. **Rapid Startup Option (CRITICAL)**: Do NOT run a full test suite baseline check (`make test`) or other heavy execution cycles on initialization unless explicitly requested or implementing/testing bug fixes. Reconcile state files quickly and proceed.
+2. Load your own state (`agents/smith.docs/state.md`) — context, current task, and resume plan in one file.
+3. **Rapid Startup Option (CRITICAL)**: Do NOT run a full test suite baseline check (`make test`) or other heavy execution cycles on initialization unless explicitly requested or implementing/testing bug fixes. Reconcile state quickly and proceed.
 4. Verify that agent links are synced (run `setup_agent_links.py` if needed).
 5. Post your persona initialization message using `make chat` immediately.
 
@@ -247,12 +245,10 @@ VERDICT: Pass | Fail | Concern
 8. Post updates to `agents/CHAT.md` after each significant step
 
 **EXIT — HARD GATE: Save BEFORE switching (MANDATORY):**
-9. Update `context.md` — UX findings, domain decisions, open issues from this session
-10. Update `current_task.md` — progress %, completed items, exact next item
-11. Update `next_steps.md` — step-by-step resume instructions for a cold start
-12. Post handoff message: `make chat MSG="<summary> @NextPersona *command" PERSONA="<Name>" CMD="handoff" TO="<next>"`
+9. Update `agents/smith.docs/state.md` — UX findings/domain decisions/open issues, progress %, exact next item, and step-by-step resume instructions for a cold start (Context, Current Task, Next Steps sections)
+10. Post handoff message: `make chat MSG="<summary> @NextPersona *command" PERSONA="<Name>" CMD="handoff" TO="<next>"`
 
-**Do NOT switch or stop until steps 9-12 are written.**
+**Do NOT switch or stop until steps 9-10 are written.**
 
 ---
 

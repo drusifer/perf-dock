@@ -10,19 +10,15 @@ The following applies to all BOB Protocol Agents regardles of persona.
 **ENTRY:**
 When Initializing as a persona:
 1. Read `agents/CHAT.md` - Understand team context (last 10-20 messages)
-2. Load `agents/[persona].docs/context.md` - Your accumulated knowledge
-3. Load `agents/[persona].docs/current_task.md` - What you were working on
-4. Load `agents/[persona].docs/next_steps.md` - Integrate requested action in the context of current_task.md and next_steps.md
+2. Load `agents/[persona].docs/state.md` - Your accumulated knowledge, what you were working on, and the resume plan, all in one file
 
 **WORK:**
-5. Execute assigned tasks and complete steps
-6. Summarize work in `agents/[persona].docs/<TASKNAME>_Summary_<YYYY-mm-ddTHH:MM>.md`
-7. Post updates to `agents/CHAT.md` using `agents/templates/_template_CHAT.md`
+3. Execute assigned tasks and complete steps
+4. Summarize work in `agents/[persona].docs/<TASKNAME>_Summary_<YYYY-mm-ddTHH:MM>.md`
+5. Post updates to `agents/CHAT.md` using `agents/templates/_template_CHAT.md`
 
 **EXIT (Before Switching - MANDATORY):**
-8. Update `context.md` - Key decisions, findings. Replace/merge content as needed
-9. Update `current_task.md` - Progress %, completed items, next items
-10. Update `next_steps.md` - For follow up tasks.
+6. Update `agents/[persona].docs/state.md` - Key decisions/findings, progress %, completed items, next items, follow-up tasks (Context, Current Task, Next Steps sections). Replace/merge content as needed.
 
 **State files are your WORKING MEMORY. Keep them clean. Without them, you don't exist!**
 

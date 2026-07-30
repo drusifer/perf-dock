@@ -42,9 +42,7 @@ Type `*help` for complete command reference with examples.
 
 - **[CHAT.md](CHAT.md)** - Team communication log (append-only)
 - Each persona maintains state in their `.docs/` folder:
-  - `context.md` - Working memory
-  - `current_task.md` - Active work
-  - `next_steps.md` - Resume plan
+  - `state.md` - Working memory: context, active work, resume plan
 
 ---
 
@@ -54,11 +52,9 @@ Located in `agents/templates/`:
 
 - `_template_ARCH.md` - Architecture decision record
 - `_template_CHAT.md` - CHAT.md message format
-- `_template_context.md` - Agent context.md
-- `_template_current_task.md` - Agent current_task.md
+- `_template_state.md` - Agent state.md (context, current task, next steps)
 - `_template_finding.md` - Research finding
 - `_template_LESSON.md` - Lesson learned
-- `_template_next_steps.md` - Agent next_steps.md
 - `_template_tldr.md` - TLDR block formats
 
 ---
@@ -85,7 +81,7 @@ Files prefixed with `.archive_` are historical and no longer active:
 
 ### File Naming
 - Persona definitions: `[PersonaName]_[ROLE]_AGENT.md`
-- State files: `context.md`, `current_task.md`, `next_steps.md`
+- State file: `state.md`
 - MCP tools: `[toolname]_mcp.md`
 - Templates: `_template_*.md`
 - Archived: `.archive_*.md`

@@ -77,7 +77,7 @@ For multi-step workflows, use a Bloop command instead: `*fix`, `*impl`, `*qa`, `
 
 ### Step 4: Load Persona and Execute
 1. Read `agents/<name>.docs/SKILL.md`
-2. Load persona's state files: `context.md`, `current_task.md`, `next_steps.md`
+2. Load persona's state: `agents/<name>.docs/state.md` (context, current task, and resume plan in one file)
 3. If PROJECT.md exists: read `agents/PROJECT.md` for project capabilities
 4. Adopt the persona and execute the command
 
@@ -90,40 +90,38 @@ make chat MSG="<response>" PERSONA="<Name>" CMD="<command>" TO="<recipient>"
 ```
 
 ### Step 7: Save State — HARD GATE (MANDATORY BEFORE ANY SWITCH)
-**Do not switch personas until all four steps below are complete.**
+**Do not switch personas until both steps below are complete.**
 
-1. Write `agents/[persona].docs/context.md` — what was learned, key decisions
-2. Write `agents/[persona].docs/current_task.md` — progress %, what was done, what's next
-3. Write `agents/[persona].docs/next_steps.md` — exact resume instructions for a cold start
-4. Post handoff: `make chat MSG="<summary> @Next *command" PERSONA="<Name>" CMD="handoff" TO="<next>"`
+1. Write `agents/[persona].docs/state.md` — what was learned/decided, progress %, what's next, and exact resume instructions for a cold start, all in one file
+2. Post handoff: `make chat MSG="<summary> @Next *command" PERSONA="<Name>" CMD="handoff" TO="<next>"`
 
 ---
 
 ## State Management
 
-**State files are the only memory that survives context overflow and session restarts.**
-Write them as if you will never be asked again and someone else must continue.
+**`state.md` is the only memory that survives context overflow and session restarts.**
+Write it as if you will never be asked again and someone else must continue.
+
+Each persona has exactly one state file — `agents/[persona].docs/state.md` — with three sections: `## Context` (what was learned, key decisions), `## Current Task` (progress %, what was done, what's next), `## Next Steps` (exact resume instructions for a cold start). This replaces the older three-file convention (`context.md`/`current_task.md`/`next_steps.md`); consolidating cut state-management tool calls per switch by two-thirds with no loss of resilience, since the file is still written every switch, just as one call instead of three.
+
+For a **large, growing reference doc** (not `state.md` itself — those stay small) like `agents/oracle.docs/lessons.md`, `agents/oracle.docs/memory.md`, or `docs/ARCH.md`, don't re-read the whole file on every entry once it accumulates many dated entries. If `via` is enabled, locate the section you need first (`via -mg '*SectionName*' -tH` returns `file:start-end`), then read only that range (`Read` with `offset`/`limit`) — see the `via` skill's "Section-Scoped Reads" note. Do not rely on `via`'s `-oR -A N` alone for this: `-A N` is a blind line-count window, not section-aware, and will run past the section boundary into the next one if `N` is too large.
 
 ### ENTRY (When Activating / Rapid Startup)
 1. Read `agents/CHAT.md` — last 10-20 messages
-2. Load `agents/[persona].docs/context.md`
-3. Load `agents/[persona].docs/current_task.md`
-4. Load `agents/[persona].docs/next_steps.md`
-5. **Rapid Startup Option (CRITICAL)**: Do NOT run a full test suite baseline check (`make test`) or other heavy execution cycles on initialization unless explicitly requested or implementing/testing bug fixes. Reconcile state files quickly and proceed.
-6. Verify that agent links are synced (run `setup_agent_links.py` if needed).
-7. Post your persona initialization message using `make chat` immediately.
-8. If `agents/PROJECT.md` exists — read it for project capabilities
+2. Load `agents/[persona].docs/state.md`
+3. **Rapid Startup Option (CRITICAL)**: Do NOT run a full test suite baseline check (`make test`) or other heavy execution cycles on initialization unless explicitly requested or implementing/testing bug fixes. Reconcile state quickly and proceed.
+4. Verify that agent links are synced (run `setup_agent_links.py` if needed).
+5. Post your persona initialization message using `make chat` immediately.
+6. If `agents/PROJECT.md` exists — read it for project capabilities
 
 ### WORK
-6. Execute assigned tasks
-7. Post updates to `agents/CHAT.md` after each significant step
+7. Execute assigned tasks
+8. Post updates to `agents/CHAT.md` after each significant step
 
 ### EXIT — HARD GATE
-8. Update `context.md`
-9. Update `current_task.md`
-10. Update `next_steps.md`
-11. Post handoff message
-12. Only now switch or stop
+9. Update `agents/[persona].docs/state.md` (Context, Current Task, Next Steps sections)
+10. Post handoff message
+11. Only now switch or stop
 
 ---
 
@@ -133,9 +131,9 @@ When resuming after a context clear or new session with no memory:
 
 1. Read bottom 20 messages of `agents/CHAT.md` — find the last handoff
 2. Identify which persona was active and what command was pending
-3. Load that persona's state files (`context.md`, `current_task.md`, `next_steps.md`)
+3. Load that persona's `state.md`
 4. Post a resume message: `make chat MSG="Resuming <task> from last session." PERSONA="<Name>" CMD="resume"`
-5. Continue from `next_steps.md` — do not restart from scratch
+5. Continue from the `## Next Steps` section of `state.md` — do not restart from scratch
 
 If CHAT.md has no clear handoff, ask the user: "I'm resuming — what should I pick up?"
 
