@@ -17,6 +17,8 @@ buttons directly.
 ## Important Notes
 - CHAT.md is short (well under 100 lines as of 2026-07-30), no archiving needed yet.
 - This project's own `agents/*.docs/` state files were migrated from the 3-file (`context.md`/`current_task.md`/`next_steps.md`) convention to the new consolidated `state.md` on 2026-07-30, alongside the same change to the shared bob-protocol skill files.
+- Shell extension sprint and documentation were committed and pushed to
+  `origin/main` as `2f1c439` on 2026-08-05.
 
 ## Current Task
 
@@ -43,7 +45,7 @@ None.
 ## Next Steps
 
 ### Immediate Next Action
-None. Documentation matches the installed implementation as of 2026-08-05.
+None. Repository is ready for shutdown; resume from `origin/main` at `2f1c439`.
 
 ### Waiting On
 Nothing.

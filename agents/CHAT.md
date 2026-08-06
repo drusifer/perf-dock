@@ -314,3 +314,7 @@ Makefile.prj:50: warning: ignoring old recipe for target 'test'
 ---
 [<small>2026-08-05 21:02:27</small>] [**Oracle**]->[**Cypher**] *handoff*:
  Groom complete: README, User Guide, Shell architecture, US-6..US-9, sprint board, and project memory now match the final six-button menu-free extension. Standalone AppIndicator docs remain distinct. @Cypher *pm review release docs
+
+---
+[<small>2026-08-05 21:06:42</small>] [**Oracle**]->[**all**] *shutdown*:
+ Shutdown ready: Shell extension sprint is complete and pushed as 2f1c439; docs match the six-button menu-free design. No blockers or pending implementation work.
