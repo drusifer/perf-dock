@@ -4,7 +4,7 @@ VENV = venv
 PYTHON = $(VENV)/bin/python3
 PIP = $(VENV)/bin/pip
 
-.PHONY: all setup run test e2e judge-trace lint format clean help install-system-deps install
+.PHONY: all setup run test e2e service-smoke extension-test shell-smoke extension-check install-extension enable-extension reload-extension disable-extension uninstall-extension judge-trace lint format clean help install-system-deps install install-polkit
 
 all: help
 
@@ -28,7 +28,12 @@ install-system-deps: ## Install Ubuntu system packages (requires sudo)
 
 install: ## Install Perf-Dock to the active python environment (pythonic way)
 	@echo "Installing Perf-Dock to the current python environment..."
-	pipx install . --system-site-packages
+	pipx install . --force --system-site-packages
+
+install-polkit: ## Install the scoped helper and retained Polkit authorization
+	@echo "Installing the root-owned Perf-Dock privilege helper and Polkit action..."
+	sudo install -o root -g root -m 0755 scripts/perf-dock-helper /usr/libexec/perf-dock-helper
+	sudo install -o root -g root -m 0644 packaging/io.github.perf-dock.policy /usr/share/polkit-1/actions/io.github.perf-dock.policy
 
 setup: ## Create virtualenv and install dependencies
 	@echo "Setting up python virtual environment with system site packages..."
@@ -49,6 +54,35 @@ e2e: ## Boot the real app briefly and verify clean startup/shutdown (skips if no
 	@echo "Running end-to-end smoke test..."
 	PYTHONPATH=. PYTHON_BIN=$(PYTHON) bash scripts/e2e_smoke.sh
 
+service-smoke: ## Exercise the real Control1 service on an isolated session bus
+	PYTHONPATH=. PYTHON_BIN=$(PYTHON) dbus-run-session -- bash scripts/service_smoke.sh
+
+extension-test: ## Validate the GNOME extension model, metadata, contract, and schema
+	gjs -m tests/js/test-model.js
+	glib-compile-schemas --strict --dry-run shell-extension/schemas
+	$(PYTHON) -m json.tool shell-extension/metadata.json >/dev/null
+
+shell-smoke: ## Load the installed extension in a nested GNOME 50 Wayland session
+	dbus-run-session -- bash scripts/shell_smoke.sh
+
+extension-check: ## Validate GNOME Shell compatibility and lifecycle prerequisites
+	bash scripts/manage_shell_extension.sh check
+
+install-extension: ## Install the extension and D-Bus service for the current user
+	bash scripts/manage_shell_extension.sh install
+
+enable-extension: ## Enable the installed Perf-Dock Shell extension
+	bash scripts/manage_shell_extension.sh enable
+
+reload-extension: ## Reload an extension already discovered by GNOME Shell
+	bash scripts/manage_shell_extension.sh reload
+
+disable-extension: ## Disable the installed Perf-Dock Shell extension
+	bash scripts/manage_shell_extension.sh disable
+
+uninstall-extension: ## Remove user extension/service files; preserve Polkit helper
+	bash scripts/manage_shell_extension.sh uninstall
+
 judge-trace: ## Extract annotated tool-use trace from Claude session JSONL (DATE=YYYY-MM-DD, FORMAT=html|md; default: today, md)
 	$(PYTHON) agents/tools/trace_annotate.py \
 		--date $(if $(DATE),$(DATE),$(shell date +%Y-%m-%d)) \
@@ -56,22 +90,22 @@ judge-trace: ## Extract annotated tool-use trace from Claude session JSONL (DATE
 
 lint: ## Run comprehensive static analysis (ruff, radon, vulture, bandit, pylint)
 	@echo "=== Running Ruff Linter ==="
-	$(PYTHON) -m ruff check perf_dock tests
+	$(PYTHON) -m ruff check perf_dock tests scripts/perf-dock-helper
 	@echo "=== Running Ruff Formatter (Check) ==="
-	$(PYTHON) -m ruff format --check perf_dock tests
+	$(PYTHON) -m ruff format --check perf_dock tests scripts/perf-dock-helper
 	@echo "=== Running Radon (Complexity Gate) ==="
 	$(PYTHON) -m radon cc -s -nb perf_dock
 	@echo "=== Running Vulture (Dead Code Detection) ==="
 	$(PYTHON) -m vulture perf_dock
 	@echo "=== Running Bandit (Security Vulnerabilities) ==="
-	$(PYTHON) -m bandit -r perf_dock
+	$(PYTHON) -m bandit -r perf_dock scripts/perf-dock-helper
 	@echo "=== Running Pylint (Duplicate Code Check) ==="
 	$(PYTHON) -m pylint --disable=all --enable=duplicate-code perf_dock
 	@echo "=== Static Analysis Completed Successfully ==="
 
 format: ## Automatically format all code using Ruff
-	$(PYTHON) -m ruff format perf_dock tests
-	$(PYTHON) -m ruff check --fix perf_dock tests
+	$(PYTHON) -m ruff format perf_dock tests scripts/perf-dock-helper
+	$(PYTHON) -m ruff check --fix perf_dock tests scripts/perf-dock-helper
 
 clean: ## Clean up build artifacts and caches
 	rm -rf .pytest_cache .coverage htmlcov .ruff_cache build dist *.egg-info

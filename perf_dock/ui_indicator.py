@@ -220,74 +220,13 @@ class PerfDockIndicator:
 
     def show_range_dialog(self) -> None:
         """Opens the frequency-range dialog, pre-filled from hardware steps/policy."""
-        snapshot = self.controller.get_details()
-        steps = self.controller.get_frequency_steps()
+        from perf_dock.range_dialog import show_frequency_range_dialog
 
-        dialog = Gtk.Dialog(title="Set Frequency Range", flags=Gtk.DialogFlags.MODAL)
-        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        dialog.add_button("Apply", Gtk.ResponseType.OK)
-
-        box = dialog.get_content_area()
-        box.add(Gtk.Label(label="Minimum frequency:"))
-        min_combo = self._build_frequency_combo(steps, snapshot.policy_min)
-        box.add(min_combo)
-        box.add(Gtk.Label(label="Maximum frequency:"))
-        max_combo = self._build_frequency_combo(steps, snapshot.policy_max)
-        box.add(max_combo)
-        dialog.show_all()
-
-        while True:
-            response = dialog.run()
-            if response != Gtk.ResponseType.OK:
-                break
-            min_khz = self._selected_frequency(min_combo, steps)
-            max_khz = self._selected_frequency(max_combo, steps)
-            if min_khz is not None and max_khz is not None and min_khz > max_khz:
-                self._show_error_dialog(
-                    dialog,
-                    "Minimum frequency cannot be greater than maximum frequency.",
-                )
-                continue
-            if not self.controller.set_range(min_khz, max_khz):
-                self._send_notification(
-                    "Perf-Dock",
-                    "Could not set frequency range: cancelled or failed.",
-                )
-            self.update_ui(self.controller.get_details())
-            break
-        dialog.destroy()
-
-    def _show_error_dialog(self, parent: Gtk.Dialog, message: str) -> None:
-        error = Gtk.MessageDialog(
-            transient_for=parent,
-            modal=True,
-            message_type=Gtk.MessageType.ERROR,
-            buttons=Gtk.ButtonsType.OK,
-            text=message,
+        show_frequency_range_dialog(
+            self.controller,
+            notify=lambda message: self._send_notification("Perf-Dock", message),
         )
-        error.run()
-        error.destroy()
-
-    def _build_frequency_combo(
-        self, steps: list[int], current_khz: int | None
-    ) -> Gtk.ComboBoxText:
-        combo = Gtk.ComboBoxText()
-        combo.append_text("No change")
-        active_index = 0
-        for index, step in enumerate(steps, start=1):
-            combo.append_text(f"{step / 1000:.0f} MHz")
-            if step == current_khz:
-                active_index = index
-        combo.set_active(active_index)
-        return combo
-
-    def _selected_frequency(
-        self, combo: Gtk.ComboBoxText, steps: list[int]
-    ) -> int | None:
-        index = combo.get_active()
-        if index <= 0:
-            return None
-        return steps[index - 1]
+        self.update_ui(self.controller.get_details())
 
     def _on_restore_clicked(self, _widget: Gtk.MenuItem) -> None:
         if self.controller.is_busy():

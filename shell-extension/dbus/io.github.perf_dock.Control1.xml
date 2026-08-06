@@ -1,0 +1,12 @@
+<node>
+  <interface name="io.github.perf_dock.Control1">
+    <method name="GetSnapshot"><arg name="snapshot" type="a{sv}" direction="out"/></method>
+    <method name="GetGovernors"><arg name="governors" type="as" direction="out"/></method>
+    <method name="SetGovernor"><arg name="name" type="s" direction="in"/><arg name="accepted" type="b" direction="out"/><arg name="message" type="s" direction="out"/></method>
+    <method name="ShowRangeDialog"><arg name="accepted" type="b" direction="out"/><arg name="message" type="s" direction="out"/></method>
+    <method name="RestoreDefaultRange"><arg name="accepted" type="b" direction="out"/><arg name="message" type="s" direction="out"/></method>
+    <method name="Refresh"><arg name="snapshot" type="a{sv}" direction="out"/></method>
+    <method name="Quit"/>
+    <signal name="SnapshotChanged"><arg name="snapshot" type="a{sv}"/></signal>
+  </interface>
+</node>

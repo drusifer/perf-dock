@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Perf-Dock</vendor>
+  <vendor_url>https://github.com/</vendor_url>
+  <action id="io.github.perf-dock.set-frequency">
+    <description>Change CPU frequency settings with Perf-Dock</description>
+    <message>Authentication is required to change CPU frequency settings</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/perf-dock-helper</annotate>
+  </action>
+</policyconfig>

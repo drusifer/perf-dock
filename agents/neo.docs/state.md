@@ -20,7 +20,7 @@
 
 ## Current Task
 
-**Status:** Sprint complete, one live bug fixed post-launch, judge-loop fixes complete
+**Status:** Scoped Polkit authorization implemented and verified; local install pending
 **Assigned to:** Neo
 **Started:** 2026-07-29
 
@@ -32,17 +32,25 @@ Implement perf-dock per docs/PRD.md, docs/USER_STORIES.md, docs/ARCH.md, agents/
 - [x] Smith e2e found + fixed `classify_state()` precision bug; added `make e2e`.
 - [x] User-reported `cpupower -r` flag-position bug fixed post-launch; added integration test.
 - [x] Judge loop BUG-001 fixed: `MAKE_BYPASS_RE` quote-blindness in `agents/tools/trace_annotate.py`; also fixed a related `VENV_RE` dotless-venv gap. Added `tests/test_trace_annotate.py`.
+- [x] Added a root-owned, argument-validating Perf-Dock helper and dedicated
+  `auth_admin_keep` Polkit action so repeated frequency changes reuse a brief
+  authorization instead of prompting every time.
+- [x] Added `make install-polkit`, documentation, and security-boundary tests;
+  63 tests and full lint pass.
 
 ### Blockers
-None.
+The execution channel cannot enter the user's sudo password. The user must run
+`make install-polkit` once in an interactive terminal; no system files have yet
+been installed.
 
 ## Next Steps
 
 ### Immediate Next Action
-None — all known issues fixed, 55/55 tests passing. Available for v2 backlog work when prioritized (see Cypher's state.md).
+User runs `make install-polkit`, then launches/restarts Perf-Dock and confirms
+that one successful authentication covers several governor/range changes.
 
 ### Waiting On
-Nothing.
+Interactive system installation by the user.
 
 ---
-*Last updated: 2026-07-30*
+*Last updated: 2026-07-30 15:33 EDT*

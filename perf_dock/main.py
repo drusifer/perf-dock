@@ -28,7 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger("perf_dock.main")
 
 
-def parse_arguments() -> argparse.Namespace:
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     """Parses command line arguments."""
     parser = argparse.ArgumentParser(
         description="Perf-Dock: A tray controller for cpupower frequency scaling.",
@@ -44,7 +44,12 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Enable verbose debugging logs",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--gapplication-service",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    return parser.parse_args(argv)
 
 
 def main() -> int:
@@ -54,6 +59,11 @@ def main() -> int:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
         logger.debug("Verbose logging enabled.")
+
+    if args.gapplication_service:
+        from perf_dock.service import run_service
+
+        return run_service(poll_interval=args.poll_interval)
 
     if not HAS_GRAPHICS:
         logger.error(

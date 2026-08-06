@@ -4,6 +4,9 @@
 **Date:** 2026-07-29
 **Status:** Draft — Pending Smith (Gate 2) Review
 
+> Shell Extension sprint architecture: see
+> [SHELL_EXTENSION_ARCH.md](SHELL_EXTENSION_ARCH.md).
+
 ---
 
 ## 1. Package Structure

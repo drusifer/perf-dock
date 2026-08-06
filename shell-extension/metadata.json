@@ -1,0 +1,9 @@
+{
+  "uuid": "perf-dock@drusifer",
+  "name": "Perf-Dock",
+  "description": "One-click CPU governor controls for the GNOME panel",
+  "shell-version": ["50"],
+  "settings-schema": "org.gnome.shell.extensions.perf-dock",
+  "url": "https://github.com/drusifer/perf-dock",
+  "version": 1
+}

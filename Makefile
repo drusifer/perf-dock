@@ -156,7 +156,7 @@ else
 #   make tldr V=-vv        stderr + filtered failures to terminal
 #   make tldr V=-vvv       stderr + full stdout to terminal
 
-.PHONY: help chat test via_index install_bob update_bob pull_bob clean_bob diff_bob setup run e2e judge-trace lint format clean install install-system-deps
+.PHONY: help chat test via_index install_bob update_bob pull_bob clean_bob diff_bob setup run e2e service-smoke extension-test shell-smoke extension-check install-extension enable-extension reload-extension disable-extension uninstall-extension judge-trace lint format clean install install-system-deps install-polkit
 
 install_bob: ## Copy agents into a project and set up skill links (usage: make install_bob TARGET=/path/to/project)
 	@$(MAKE) MKF_ACTIVE=1 install_bob TARGET="$(TARGET)"
@@ -220,6 +220,33 @@ run: ## Run the perf-dock tray application (Makefile.prj)
 e2e: ## Boot the real app briefly, verify clean startup/shutdown (Makefile.prj)
 	@./agents/tools/mkf.py $(V) $@
 
+service-smoke: ## Exercise the real Control1 service on an isolated session bus (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
+extension-test: ## Validate GNOME extension model, metadata, contract, and schema (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
+shell-smoke: ## Load the installed extension in a nested GNOME 50 Wayland session (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
+extension-check: ## Validate GNOME Shell compatibility and lifecycle prerequisites (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
+install-extension: ## Install the extension and D-Bus service for the current user (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
+enable-extension: ## Enable the installed Perf-Dock Shell extension (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
+reload-extension: ## Reload an extension already discovered by GNOME Shell (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
+disable-extension: ## Disable the installed Perf-Dock Shell extension (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
+uninstall-extension: ## Remove user extension/service files; preserve Polkit helper (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
 judge-trace: ## Extract annotated tool-use trace from Claude session JSONL (Makefile.prj)
 	@./agents/tools/mkf.py $(V) $@
 
@@ -236,6 +263,9 @@ install: ## Install perf-dock to the active python environment (Makefile.prj)
 	@./agents/tools/mkf.py $(V) $@
 
 install-system-deps: ## Install Ubuntu system packages for perf-dock (Makefile.prj)
+	@./agents/tools/mkf.py $(V) $@
+
+install-polkit: ## Install scoped helper with short-lived retained authorization (Makefile.prj)
 	@./agents/tools/mkf.py $(V) $@
 
 # Interception logic:

@@ -32,6 +32,7 @@ sudo apt-get install -y \
 **Recommended — `pipx` (system-wide, isolated):**
 ```bash
 pipx install . --system-site-packages
+make install-polkit
 ```
 
 **Pythonic — active environment:**
@@ -44,13 +45,42 @@ make install
 make setup
 ```
 
-### Step 3: Run It
+Run `make install-polkit` once if you want Polkit to retain authorization for
+several changes. The installed root-owned helper accepts only Perf-Dock's
+governor and frequency-range operations; generic `pkexec` commands remain
+protected. Polkit normally retains this dedicated approval for a short period
+(commonly about five minutes), rather than storing your password in a keyring.
+
+### Step 3A: Install the GNOME Shell Extension
+
+For the minimal one-click GNOME 50 interface:
+
+```bash
+make install-extension
+make enable-extension
+```
+
+The first installation may require logging out and back in before GNOME Shell
+discovers the extension. GNOME on Wayland also caches extension JavaScript, so
+log out and back in after installing a source update.
+
+The extension displays every governor reported by the active CPU driver as an
+alphabetically ordered icon in one panel strip. Click an icon to select that
+governor. The selected icon has a high-contrast blue background and white
+outline; hovering or focusing an icon shows its name and scaling behavior.
+
+The Shell extension deliberately has no popup menu, visibility toggles,
+frequency-range controls, or backend quit/restart action. Use the standalone
+AppIndicator below when those richer controls are needed.
+
+### Step 3B: Run the Standalone AppIndicator
 
 ```bash
 make run
 ```
 
-You should see a gauge-style icon appear in your top panel, reflecting your current CPU governor.
+You should see a gauge-style icon appear in your top panel, reflecting your
+current CPU governor. Clicking it opens the full tray menu described below.
 
 ---
 
@@ -62,7 +92,7 @@ You should see a gauge-style icon appear in your top panel, reflecting your curr
 
 ---
 
-## 🖱️ 3. Tray Menu Walkthrough
+## 🖱️ 3. Standalone Tray Menu Walkthrough
 
 ```
 +------------------------------------------+
@@ -82,7 +112,7 @@ You should see a gauge-style icon appear in your top panel, reflecting your curr
 +------------------------------------------+
 ```
 
-*   **Selecting a governor** immediately runs `cpupower frequency-set -g <governor> -r` behind a `pkexec` password prompt. If you cancel the prompt, nothing changes and a desktop notification tells you the request was cancelled.
+*   **Selecting a governor** immediately requests the scoped privileged helper to run `cpupower frequency-set -g <governor> -r`. Without the optional Polkit helper installation, Perf-Dock falls back to the standard `pkexec` password prompt. If you cancel the prompt, nothing changes and a desktop notification tells you the request was cancelled.
 *   **Set Frequency Range...** opens a dialog pre-filled with your hardware's actual supported frequency steps — pick a "No change" option to leave either bound alone. Selecting a minimum greater than the maximum is rejected before anything runs.
 *   **Restore Default Range** resets min/max back to your hardware's full reported range — the escape hatch back to a stock profile once you've pinned a custom range.
 

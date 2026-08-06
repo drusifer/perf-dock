@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=io.github.perf_dock
+Exec=@PERF_DOCK_EXEC@ --gapplication-service

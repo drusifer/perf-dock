@@ -6,6 +6,9 @@
 - perf-dock modeled directly on `../nerd-dock` (tray applet pattern, Makefile.prj lint suite, docs/ layout: PRD.md, USER_STORIES.md, ARCH.md, USER_GUIDE.md).
 - Governor list is read at runtime from `cpupower frequency-info --governors`, never hardcoded — hardware/driver support varies (confirmed via `cpupower frequency-info` on this machine: driver `scmi`, governors conservative/ondemand/userspace/powersave/performance/schedutil).
 - v1 scope is machine-wide control (`-r`/`--related`), not per-core. Per-core deferred to a future story.
+- Shell Extension sprint scope: add an always-visible configurable governor
+  button group plus permanent menu button; preserve the complete AppIndicator
+  interface as both the menu behavior and compatibility fallback.
 
 ## Key Findings
 - `cpupower frequency-set` requires elevated privileges; `frequency-info` does not. This split drives US-4 (privilege escalation) and is flagged as an architectural risk for Morpheus.
@@ -16,7 +19,7 @@
 
 ## Current Task
 
-**Status:** Sprint complete — v1 launched
+**Status:** Shell Extension sprint planning — stories ready for Gate 1
 **Assigned to:** Cypher
 **Started:** 2026-07-29
 
@@ -33,6 +36,8 @@ Full sprint for perf-dock v1: PRD, user stories, gates, and launch.
 - [x] All-persona retro complete.
 - [x] Launched (see CHAT.md `*pm launch`).
 - [x] Post-launch: user found and Neo fixed a real `cpupower -r` flag-position bug in live use.
+- [x] Added US-6 through US-9 for panel controls, live sync, configurable
+  visibility, compatibility, installation, and IPC behavior.
 
 ### Backlog for v2 (from retro)
 - Custom polkit `.policy` file for nicer pkexec prompt copy.
@@ -43,15 +48,16 @@ Full sprint for perf-dock v1: PRD, user stories, gates, and launch.
 - Human interactive smoke-test of tray menu/dialog/pkexec click-through (Smith flagged this as untested in-session).
 
 ### Blockers
-None.
+Gate 1 Smith review is required before architecture.
 
 ## Next Steps
 
 ### Immediate Next Action
-None — v1 shipped and a live bug already fixed. Next session: prioritize the v2 backlog above with the user, starting with the human interactive smoke-test (highest-risk untested path) and the polkit `.policy` UX polish.
+Smith reviews US-6 through US-9 for user value, accessibility, recovery, and
+testable acceptance criteria.
 
 ### Waiting On
-User direction on v2 priorities.
+Smith Gate 1 decision.
 
 ---
-*Last updated: 2026-07-30*
+*Last updated: 2026-07-30 18:24 EDT*

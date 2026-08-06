@@ -1,0 +1,72 @@
+#!/usr/bin/python3
+"""Root helper for the narrowly scoped Perf-Dock Polkit action."""
+
+import os
+import re
+import sys
+from typing import NoReturn
+
+CPUPOWER_PATHS = (
+    "/usr/bin/cpupower",
+    "/usr/sbin/cpupower",
+    "/bin/cpupower",
+    "/sbin/cpupower",
+)
+GOVERNOR_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,32}\Z")
+
+
+def fail(message: str) -> NoReturn:
+    """Reject malformed requests without invoking a privileged subprocess."""
+    print(f"perf-dock-helper: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def frequency(value: str) -> str:
+    """Validate a positive integer kHz value for cpupower."""
+    if not value.isascii() or not value.isdecimal() or int(value) <= 0:
+        fail("frequency must be a positive integer in kHz")
+    return f"{value}kHz"
+
+
+def cpupower_path() -> str:
+    """Locate cpupower only in trusted, root-owned system locations."""
+    for candidate in CPUPOWER_PATHS:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    fail("cpupower was not found in a trusted system directory")
+
+
+def build_command(arguments: list[str]) -> list[str]:
+    """Translate the two allowed helper operations into fixed cpupower argv."""
+    if len(arguments) == 2 and arguments[0] == "governor":
+        governor = arguments[1]
+        if not GOVERNOR_PATTERN.fullmatch(governor):
+            fail("invalid governor name")
+        return [cpupower_path(), "frequency-set", "-r", "-g", governor]
+
+    if len(arguments) == 3 and arguments[0] == "range":
+        minimum, maximum = arguments[1:]
+        if minimum == maximum == "-":
+            fail("at least one frequency bound is required")
+        command = [cpupower_path(), "frequency-set", "-r"]
+        if minimum != "-":
+            command.extend(("-d", frequency(minimum)))
+        if maximum != "-":
+            command.extend(("-u", frequency(maximum)))
+        if minimum != "-" and maximum != "-" and int(minimum) > int(maximum):
+            fail("minimum frequency cannot exceed maximum frequency")
+        return command
+
+    fail("usage: perf-dock-helper governor NAME | range MIN_KHZ|- MAX_KHZ|-")
+
+
+def main() -> None:
+    """Replace this process with the validated cpupower invocation."""
+    command = build_command(sys.argv[1:])
+    os.execv(  # nosec B606  # noqa: S606 - fixed argv replaces root helper
+        command[0], command
+    )
+
+
+if __name__ == "__main__":
+    main()

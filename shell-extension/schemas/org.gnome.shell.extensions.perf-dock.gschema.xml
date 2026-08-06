@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.perf-dock"
+          path="/org/gnome/shell/extensions/perf-dock/">
+    <key name="visible-governors" type="as">
+      <default>['powersave', 'schedutil', 'performance']</default>
+      <summary>Governor buttons shown in the panel</summary>
+      <description>
+        Ordered governor preferences. Unsupported governors remain stored and
+        return automatically if the active CPU driver exposes them again.
+      </description>
+    </key>
+  </schema>
+</schemalist>

@@ -2,6 +2,10 @@
 
 ## Context
 
+Perf-Dock now has two deliberately distinct interfaces: a full standalone
+AppIndicator and a GNOME Shell 50 KISS extension showing all available governor
+buttons directly.
+
 ## Recent Decisions
 - Groomed docs for perf-dock v1 sprint: wrote README.md and docs/USER_GUIDE.md (both mirroring nerd-dock's structure/tone), updated memory.md's Project Context (was still template/Bob-Protocol placeholder) and Major Decisions table, added lessons.md entries for real defects found this session.
 
@@ -16,18 +20,22 @@
 
 ## Current Task
 
-**Status:** Groom complete for v1; skill/process improvements complete
+**Status:** Complete — Shell extension post-UAT grooming
 **Assigned to:** Oracle
-**Started:** 2026-07-29
+**Started:** 2026-08-05
 
 ### Task Description
-Sprint-close grooming for perf-dock v1 (docs, memory, lessons), plus cross-project bob-protocol improvements after the user's review.
+Reconcile documentation with the live-tested Shell extension design and close
+the Shell extension sprint board.
 
 ### Progress
-- [x] Wrote README.md and docs/USER_GUIDE.md.
-- [x] Updated memory.md and lessons.md (4 entries: Makefile.prj stub requirement, ruff/bandit config additions, classify_state precision bug, cpupower -r flag-position bug).
-- [x] Smith end-to-end usability test, all-persona retro, Cypher launch — complete.
-- [x] Post-launch skill improvements (user-approved): gitignore scaffolding fix, judge live-session caveat, Trin lesson promotion, state-file consolidation.
+- [x] Updated Shell architecture from proposed configurable popup to the final
+  menu-free, all-governor panel design.
+- [x] Updated US-6 through US-9 acceptance criteria and closed `task.md`.
+- [x] Added Shell extension install/usage guidance and README navigation.
+- [x] Preserved standalone AppIndicator menu/range documentation as a distinct
+  interface.
+- [x] Recorded the KISS UI and truthful-tooltip decisions in project memory.
 
 ### Blockers
 None.
@@ -35,10 +43,10 @@ None.
 ## Next Steps
 
 ### Immediate Next Action
-None — all agreed skill improvements are implemented. Available for the next `*ora groom` pass once v2 backlog work starts.
+None. Documentation matches the installed implementation as of 2026-08-05.
 
 ### Waiting On
 Nothing.
 
 ---
-*Last updated: 2026-07-30*
+*Last updated: 2026-08-05*

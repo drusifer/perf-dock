@@ -214,3 +214,103 @@ make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
 Ran 55 tests in 0.063s
 
 OK
+
+---
+[<small>2026-07-30 15:29:44</small>] [**Neo**]->[**all**] *swe impl*:
+ Starting a scoped Polkit authorization change for CPU frequency controls. The user wants repeated governor/range changes without password prompts, so the implementation must authorize only Perf-Dock's fixed helper/action rather than generic pkexec.
+
+---
+[<small>2026-07-30 15:32:29</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make lint | /home/drusifer/Projects/perf-dock/build/build.out
+Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
+
+=== Static Analysis Completed Successfully ===
+make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
+
+---
+[<small>2026-07-30 15:38:15</small>] [**Neo**]->[**User**] *swe handoff*:
+ Scoped Polkit helper implementation is complete: 63 tests and full lint pass. System install remains intentionally pending because sudo needs the user's interactive terminal; run make install-polkit, then restart Perf-Dock so repeated changes reuse brief authorization.
+
+---
+[<small>2026-07-30 15:44:13</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make install-polkit | /home/drusifer/Projects/perf-dock/build/build.out
+make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
+Makefile.prj:50: warning: ignoring old recipe for target 'test'
+
+---
+[<small>2026-07-30 15:48:53</small>] [**Smith**]->[**all**] *user consult*:
+ Reviewing the proposed richer profile selector. The current menu already uses radio rows, but AppIndicator menus constrain custom button layouts and hover behavior; the UX recommendation must distinguish a richer dropdown from a separate GTK control panel.
+
+---
+[<small>2026-07-30 15:49:17</small>] [**Smith**]->[**Cypher**] *user handoff*:
+ UX recommendation: show each profile as a persistent selectable row/card with strong active state and visible frequency range; use hover only for supplemental detail. AppIndicator reliably supports a Gtk.Menu, so horizontal buttons belong in a separate compact GTK panel; the tray dropdown can instead use enriched radio rows. Awaiting user's surface choice. @Cypher *pm story
+
+---
+[<small>2026-07-30 18:18:37</small>] [**Smith**]->[**Morpheus**] *user handoff*:
+ User clarified the desired surface: one always-visible GNOME panel group with Powersave, Schedutil, Performance, and hamburger buttons. UX approves the concept. A single AppIndicator cannot provide four independent panel click targets; recommend a GNOME Shell extension frontend backed by the existing controller. @Morpheus *lead design
+
+---
+[<small>2026-07-30 18:22:44</small>] [**Smith**]->[**Cypher**] *user handoff*:
+ User started the Shell Extension sprint. Requirements: preserve existing hamburger menu; add always-visible Powersave/Schedutil/Performance profile buttons; selected state distinct; hover shows profile and live range; menu configures visible profile buttons. @Cypher *pm plan sprint shell-extension
+
+---
+[<small>2026-07-30 18:23:34</small>] [**Cypher**]->[**Smith**] *pm handoff*:
+ Shell Extension stories US-6..US-9 are ready: one-click panel governors, active/pending/error states, live tooltips/sync, persistent visibility checkboxes, preserved full menu, versioned IPC, install/compatibility, and fallback behavior. @Smith *user review shell-extension
+
+---
+[<small>2026-07-30 18:23:54</small>] [**Smith**]->[**Morpheus**] *user approve*:
+ Gate 1 APPROVED: US-6..US-9 make the one-click panel surface testable while preserving recovery, accessibility, configuration, and the existing menu fallback. @Morpheus *lead arch shell-extension
+
+---
+[<small>2026-07-30 18:25:38</small>] [**Morpheus**]->[**Smith**] *lead handoff*:
+ Architecture ready in docs/SHELL_EXTENSION_ARCH.md: GNOME 50 panel frontend, async versioned D-Bus service, GSettings visibility, recreated menu parity, AppIndicator fallback, user-local lifecycle, and nested-Shell verification. @Smith *user feedback shell-extension architecture
+
+---
+[<small>2026-07-30 18:25:55</small>] [**Smith**]->[**Mouse**] *user approve*:
+ Gate 2 APPROVED: the GNOME 50 panel/D-Bus architecture meets the requested one-click surface, preserves full menu behavior and AppIndicator fallback, avoids blocking Shell, and includes accessible state plus reconnect recovery. @Mouse *sm plan shell-extension
+
+---
+[<small>2026-07-30 18:26:38</small>] [**Mouse**]->[**Morpheus**] *sm handoff*:
+ Shell Extension sprint is decomposed in root task.md: Phase 1 backend contract, Phase 2 extension model/settings, Phase 3 panel/menu, Phase 4 Tank lifecycle + real GNOME verification/release. Each phase has 3 tasks and explicit QA/review gates. @Morpheus *lead review shell-extension plan
+
+---
+[<small>2026-07-30 18:26:49</small>] [**Morpheus**]->[**Neo**] *lead handoff*:
+ Sprint plan APPROVED: task.md matches the architecture dependency order, keeps phases bounded, includes every US-6..US-9 gate, and sequences lifecycle work last. Phase 1 is ready: Control1 contract tests and Python D-Bus service only. @Neo *swe impl phase-1
+
+---
+[<small>2026-07-30 18:35:19</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make lint | /home/drusifer/Projects/perf-dock/build/build.out
+Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
+
+=== Static Analysis Completed Successfully ===
+make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
+
+---
+[<small>2026-07-30 18:35:28</small>] [**Neo**]->[**Trin**] *swe handoff*:
+ Phases 1-3 implementation complete: Control1 service + real bus smoke, GNOME 50 model/schema, profile buttons, hover, active/pending/error states, visibility switches, menu parity, and shared GTK range dialog. 72 Python tests, extension-test, service-smoke, lint 10/10 pass. @Trin *qa uat phases-1-3
+
+---
+[<small>2026-08-03 09:56:59</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make e2e | /home/drusifer/Projects/perf-dock/build/build.out
+make[1]: Leaving directory '/home/drusifer/Projects/perf-dock'
+Makefile.prj:50: warning: ignoring old recipe for target 'test'
+
+---
+[<small>2026-08-03 09:57:51</small>] [**Trin**]->[**Morpheus**] *qa handoff*:
+ QA PASS phases 1-3: 72 Python tests, real D-Bus/cpupower service smoke, extension model/schema, lint 10/10, and real GTK AppIndicator e2e pass. Judge trace reviewed; sandbox-only failures were rerun on host. @Morpheus *lead review phases-1-3
+
+---
+[<small>2026-08-03 09:57:51</small>] [**Morpheus**]->[**Tank**] *lead handoff*:
+ Architecture review PASS after consolidating controls into one public PanelMenu.Button/St.BoxLayout group, guaranteeing the requested contiguous box. Phase 4 lifecycle/install is ready. @Tank *devops impl phase-4
+
+---
+[<small>2026-08-05 20:56:01</small>] [**make**]->[**all**] *build*:
+ Build PASSED | make shell-smoke | /home/drusifer/Projects/perf-dock/build/build.out
+
+---
+[<small>2026-08-05 20:58:31</small>] [**Oracle**]->[**all**] *ora groom*:
+ Oracle initialized for post-UAT documentation grooming: reconciling Shell Extension docs with the final six-button, menu-free design.
+
+---
+[<small>2026-08-05 21:02:27</small>] [**Oracle**]->[**Cypher**] *handoff*:
+ Groom complete: README, User Guide, Shell architecture, US-6..US-9, sprint board, and project memory now match the final six-button menu-free extension. Standalone AppIndicator docs remain distinct. @Cypher *pm review release docs

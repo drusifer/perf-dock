@@ -65,3 +65,77 @@
   - `bandit` scrutiny is explicitly applied to the subprocess/privilege-escalation code paths (US-4).
   - `make test` runs a headless unit test suite that mocks all `subprocess` calls to `cpupower` and any privilege-escalation wrapper — no real hardware or root access required in CI.
   - `make e2e` boots the real application for a few seconds against real `cpupower`/GTK and verifies clean startup (correct initial state, no traceback) and clean shutdown; it skips gracefully when no display session is available (e.g. headless CI) rather than failing.
+
+---
+
+## Shell Extension Sprint — 2026-07-30
+
+### **US-6: Always-Visible Governor Controls**
+*As a GNOME desktop user, I want my preferred governors available as individual
+buttons in the top panel, so I can change performance mode with one click
+without opening a menu.*
+
+- **Acceptance Criteria:**
+  - A GNOME Shell extension renders one panel button for every governor reported
+    as available by the current hardware; all six target-machine governors are
+    visible without opening a menu.
+  - Buttons are alphabetically ordered and use distinct symbolic icons.
+  - Activating a governor button uses Perf-Dock's existing scoped privileged
+    mutation path; the extension itself never runs privileged code.
+  - The active governor is visually distinct using shape/background plus an
+    accessible checked/selected state; selection is not communicated by color
+    alone.
+  - While a change is pending, duplicate activation is prevented and the panel
+    visibly communicates the pending state.
+  - Failure or cancellation restores the prior visible selection and shows a
+    clear notification.
+
+### **US-7: Live Profile Information and Synchronization**
+*As a user, I want the panel controls to stay synchronized and explain each
+profile, so I can trust what the panel shows before switching modes.*
+
+- **Acceptance Criteria:**
+  - Hovering or keyboard-focusing a governor button shows its display name,
+    active status, and a short description of its scaling behavior.
+  - External governor/range changes appear in the panel within one existing
+    monitor polling cycle.
+  - Tooltips do not claim governor-specific frequency ranges because the kernel
+    exposes one shared policy range rather than a range owned by each governor.
+  - Missing backend, missing `cpupower`, or communication failure produces an
+    explicit unavailable/error state instead of stale controls.
+
+### **US-8: KISS Panel Surface (Supersedes Configurable Menu Design)**
+*As a user, I want one unambiguous action per governor and no duplicate menu
+controls, so changing modes is immediate and predictable.*
+
+- **Acceptance Criteria:**
+  - The extension has no popup menu, hamburger, or visibility toggles.
+  - Every available governor is always displayed as a direct panel action.
+  - The extension has no backend quit/restart or frequency-range actions.
+  - The standalone AppIndicator remains the richer interface for custom ranges
+    and application lifecycle actions.
+
+### **US-9: Installable and Compatible GNOME Integration**
+*As a user, I want the panel extension and Perf-Dock backend to install and start
+predictably, so the richer interface does not require manual process management.*
+
+- **Acceptance Criteria:**
+  - Project automation installs, enables, disables, and uninstalls the extension
+    using documented repeatable Make targets.
+  - Supported GNOME Shell versions are declared explicitly and verified against
+    the user's installed version before installation.
+  - The extension communicates with an unprivileged Perf-Dock backend through a
+    documented, versioned IPC contract and reconnects after either side restarts.
+  - Disabling/removing the extension leaves the existing AppIndicator application
+    usable as a fallback and does not remove the scoped Polkit helper.
+  - Automated tests cover the IPC contract and pure extension state logic;
+    a real GNOME session smoke test verifies panel creation, selection sync,
+    all-governor rendering, selection sync, and clean disable/re-enable.
+
+### Out of Scope for This Sprint
+
+- Per-core controls.
+- Creating or renaming governors not exposed by the active kernel driver.
+- Replacing the existing custom frequency-range dialog.
+- Disabling `power-profiles-daemon` automatically.
+- Supporting non-GNOME panels through the Shell extension.

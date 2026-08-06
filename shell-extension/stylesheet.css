@@ -1,0 +1,30 @@
+.perf-dock-button {
+  padding: 0 6px;
+  border-radius: 6px;
+}
+
+.perf-dock-button:focus {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+
+.perf-dock-button-active,
+.perf-dock-button:checked {
+  background-color: rgba(53, 132, 228, 0.95);
+  color: white;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.75);
+}
+
+.perf-dock-button-pending {
+  opacity: 0.55;
+}
+
+.perf-dock-button-error {
+  color: #f66151;
+}
+
+.perf-dock-tooltip {
+  background-color: rgba(30, 30, 30, 0.96);
+  border-radius: 6px;
+  color: white;
+  padding: 6px 9px;
+}

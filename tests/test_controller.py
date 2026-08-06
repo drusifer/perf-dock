@@ -10,6 +10,11 @@ from perf_dock.state import STATE_CUSTOM, STATE_ERROR, STATE_PERFORMANCE
 
 class TestPerfDockController(unittest.TestCase):
     def setUp(self) -> None:
+        helper_patch = patch(
+            "perf_dock.controller.PRIVILEGED_HELPER", "/missing/perf-dock-helper"
+        )
+        helper_patch.start()
+        self.addCleanup(helper_patch.stop)
         self.controller = PerfDockController()
 
     @patch("perf_dock.controller.cpufreq.is_available", return_value=True)
@@ -82,6 +87,31 @@ class TestPerfDockController(unittest.TestCase):
             check=False,
         )
         self.assertFalse(self.controller.is_busy())
+
+    @patch("perf_dock.controller.subprocess.run")
+    @patch("perf_dock.controller.os.path.isfile", return_value=True)
+    def test_installed_helper_uses_scoped_polkit_action(
+        self, _mock_isfile: patch, mock_run: patch
+    ) -> None:
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        with patch(
+            "perf_dock.controller.PRIVILEGED_HELPER",
+            "/usr/libexec/perf-dock-helper",
+        ):
+            result = self.controller.set_range(1000000, 2000000)
+        self.assertTrue(result)
+        mock_run.assert_called_once_with(
+            [
+                "pkexec",
+                "/usr/libexec/perf-dock-helper",
+                "range",
+                "1000000",
+                "2000000",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
     @patch("perf_dock.controller.subprocess.run")
     @patch(
